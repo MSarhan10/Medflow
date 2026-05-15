@@ -303,7 +303,6 @@
         <span id="msgCtxCount">1</span>
     </div>
     <div class="ctx-right">
-        <!-- Edit to the left of Copy -->
         <button class="ctx-btn" id="msgCtxEditBtn" onclick="ctxEditMsg()" title="Edit Text">✏️</button>
         <button class="ctx-btn" id="ctxCopyBtn" onclick="ctxCopy()" title="Copy Note">📋</button>
         
@@ -611,7 +610,7 @@ function updateFilterUI(context) {
 // ── Utils ──
 function initials(name) { return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() || '?'; }
 function fmtTime(ts) { return !ts ? '' : new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function escHtml(s) { return !s ? '' : s.replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>'); }
+function escHtml(s) { return !s ? '' : s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── Dashboard (Patients) ──
 async function addPatient() {
@@ -619,32 +618,8 @@ async function addPatient() {
     const name = inp.value.trim();
     if (!name) return;
     await db.patients.add({ name, lastModified: Date.now(), sections:{ history:[], investigations:[], labs:[], tasks:[] } });
-    closeAddModal(); // ── API Key Management ──
-function openKeyModal() {
-    const existing = localStorage.getItem('groq_api_key') || '';
-    document.getElementById('keyInp').value = existing;
-    document.getElementById('keyStatus').textContent = existing ? '✅ Key saved — you can update it here.' : '';
-    document.getElementById('keyModal').classList.add('open');
-    setTimeout(() => document.getElementById('keyInp').focus(), 80);
-}
-function closeKeyModal() {
-    document.getElementById('keyModal').classList.remove('open');
-}
-function saveKey() {
-    const val = document.getElementById('keyInp').value.trim();
-    if (!val.startsWith('gsk_')) { document.getElementById('keyStatus').textContent = '❌ Invalid key — should start with gsk_'; return; }
-    localStorage.setItem('groq_api_key', val);
-    updateKeyBtnState();
-    closeKeyModal();
-}
-function updateKeyBtnState() {
-    const btn = document.getElementById('keyBtn');
-    btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
-    btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
-}
-
-loadDashboard();
-updateKeyBtnState();
+    closeAddModal();
+    loadDashboard();
 }
 
 async function loadDashboard() {
@@ -831,32 +806,7 @@ function showDashboard() {
     document.getElementById('patientDetail').classList.add('hidden');
     document.getElementById('backBtn').classList.add('hidden');
     document.getElementById('fabContainer').classList.remove('hidden');
-    // ── API Key Management ──
-function openKeyModal() {
-    const existing = localStorage.getItem('groq_api_key') || '';
-    document.getElementById('keyInp').value = existing;
-    document.getElementById('keyStatus').textContent = existing ? '✅ Key saved — you can update it here.' : '';
-    document.getElementById('keyModal').classList.add('open');
-    setTimeout(() => document.getElementById('keyInp').focus(), 80);
-}
-function closeKeyModal() {
-    document.getElementById('keyModal').classList.remove('open');
-}
-function saveKey() {
-    const val = document.getElementById('keyInp').value.trim();
-    if (!val.startsWith('gsk_')) { document.getElementById('keyStatus').textContent = '❌ Invalid key — should start with gsk_'; return; }
-    localStorage.setItem('groq_api_key', val);
-    updateKeyBtnState();
-    closeKeyModal();
-}
-function updateKeyBtnState() {
-    const btn = document.getElementById('keyBtn');
-    btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
-    btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
-}
-
-loadDashboard();
-updateKeyBtnState();
+    loadDashboard();
 }
 
 function switchTab(tabId) {
@@ -1091,22 +1041,6 @@ async function handleOCR(e, msgIdx, imgIdx) {
     }
 }
 
-function showTranscriptModal(text) {
-    document.getElementById('transcriptText').textContent = text;
-    document.getElementById('transcriptModal').classList.add('open');
-}
-
-function closeTranscriptModal() {
-    document.getElementById('transcriptModal').classList.remove('open');
-}
-
-function copyTranscription() {
-    const text = document.getElementById('transcriptText').textContent;
-    navigator.clipboard.writeText(text).then(() => {
-        alert("Transcription copied!");
-    });
-}
-
 async function handleTranscribe(e, msgIdx, audioIdx) {
     e.stopPropagation(); // prevent message selection
     
@@ -1161,6 +1095,61 @@ async function handleTranscribe(e, msgIdx, audioIdx) {
             btn.disabled = false;
             btn.innerHTML = "📝 Transcribe";
         }
+    }
+}
+
+// ── Transcript Formatting & Bidi Helper ──
+function formatTranscriptText(text) {
+    if (!text) return '';
+    return text.split('\n').map(line => {
+        let trimmed = line.trim();
+        if (!trimmed) return '<div style="min-height:0.8em"></div>';
+        
+        // Find the first alphabetical character to determine alignment
+        const firstCharMatch = trimmed.match(/[a-zA-Z\u0600-\u06FF]/);
+        let isArabic = false;
+        if (firstCharMatch) {
+            isArabic = /[\u0600-\u06FF]/.test(firstCharMatch[0]);
+        }
+        
+        const dir = isArabic ? 'rtl' : 'ltr';
+        const align = isArabic ? 'right' : 'left';
+        
+        // Escape HTML
+        let escaped = escHtml(trimmed);
+        
+        // Apply Markdown Bold
+        escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        
+        return `<div dir="${dir}" style="text-align: ${align}; margin-bottom: 4px; line-height: 1.5;">${escaped}</div>`;
+    }).join('');
+}
+
+function showTranscriptModal(text) {
+    const el = document.getElementById('transcriptText');
+    el.dataset.rawText = text;
+    el.innerHTML = formatTranscriptText(text);
+    document.getElementById('transcriptModal').classList.add('open');
+}
+
+function closeTranscriptModal() {
+    document.getElementById('transcriptModal').classList.remove('open');
+}
+
+function copyTranscription() {
+    const el = document.getElementById('transcriptText');
+    const text = el.dataset.rawText || el.innerText;
+    
+    const successFeedback = () => {
+        alert("Transcription copied!");
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+            .then(successFeedback)
+            .catch(() => fallbackCopy(text, successFeedback));
+    } else {
+        fallbackCopy(text, successFeedback);
     }
 }
 
@@ -1457,32 +1446,8 @@ async function importData(e) {
                 const existing = await db.patients.where('name').equals(p.name).first();
                 if (existing) { p.id = existing.id; await db.patients.put(p); } else { delete p.id; await db.patients.add(p); }
             }
-            // ── API Key Management ──
-function openKeyModal() {
-    const existing = localStorage.getItem('groq_api_key') || '';
-    document.getElementById('keyInp').value = existing;
-    document.getElementById('keyStatus').textContent = existing ? '✅ Key saved — you can update it here.' : '';
-    document.getElementById('keyModal').classList.add('open');
-    setTimeout(() => document.getElementById('keyInp').focus(), 80);
-}
-function closeKeyModal() {
-    document.getElementById('keyModal').classList.remove('open');
-}
-function saveKey() {
-    const val = document.getElementById('keyInp').value.trim();
-    if (!val.startsWith('gsk_')) { document.getElementById('keyStatus').textContent = '❌ Invalid key — should start with gsk_'; return; }
-    localStorage.setItem('groq_api_key', val);
-    updateKeyBtnState();
-    closeKeyModal();
-}
-function updateKeyBtnState() {
-    const btn = document.getElementById('keyBtn');
-    btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
-    btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
-}
-
-loadDashboard();
-updateKeyBtnState(); alert('Import successful!');
+            loadDashboard();
+            alert('Import successful!');
         } catch { alert('Invalid file format.'); }
     };
     if(e.target.files[0]) reader.readAsText(e.target.files[0]);
