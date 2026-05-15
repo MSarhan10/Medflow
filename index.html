@@ -275,7 +275,7 @@
         <div class="hdr-logo">🏥</div>
         <div>
             <h1 class="hdr-title">MedFlow</h1>
-            <div class="hdr-sub">Developed by MSarhan</div>
+            <div class="hdr-sub">Handover System</div>
         </div>
     </div>
     <div class="hdr-right">
@@ -610,7 +610,7 @@ function updateFilterUI(context) {
 // ── Utils ──
 function initials(name) { return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() || '?'; }
 function fmtTime(ts) { return !ts ? '' : new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function escHtml(s) { return !s ? '' : s.replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>'); }
+function escHtml(s) { return !s ? '' : s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── Dashboard (Patients) ──
 async function addPatient() {
@@ -979,10 +979,6 @@ async function processTranscription(audioBlob) {
         formData.append('model', model);
         formData.append('language', 'ar');
         formData.append('temperature', '0.0');
-        formData.append('compression_ratio_threshold', '2.4');
-        formData.append('logprob_threshold', '-1.0');
-        formData.append('no_speech_threshold', '0.5');
-        formData.append('condition_on_previous_text', 'true');
         formData.append('prompt', WHISPER_VOCAB_HINT);
         return fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
             method: 'POST',
@@ -1141,7 +1137,8 @@ async function handleTranscribe(e, msgIdx, audioIdx) {
         showTranscriptModal(transcribedText);
         
     } catch (err) {
-        alert("Transcription failed. Please try again.");
+        const msg = err?.message || String(err);
+        alert(`Transcription failed: ${msg}`);
         if(btn) {
             btn.disabled = false;
             btn.innerHTML = "📝 Transcribe";
