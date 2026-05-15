@@ -1,0 +1,1525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MedFlow Handover</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <style>
+        :root {
+            --teal:       #128C7E;
+            --teal-dark:  #075E54;
+            --teal-light: #25D366;
+            --chat-bg:    #E5DDD5;
+            --bubble-in:  #FFFFFF;
+            --input-bg:   #F0F2F5;
+            --border:     #E9EDEF;
+            --text:       #111B21;
+            --muted:      #667781;
+            --danger:     #ef4444;
+            --shadow-sm:  0 1px 2px rgba(0,0,0,0.1);
+            --shadow-md:  0 4px 16px rgba(0,0,0,0.12);
+            --r:          14px;
+        }
+        *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+        
+        html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+        body{ font-family:'DM Sans',sans-serif; background:var(--teal-dark); color:var(--text); }
+
+        /* ── Header ── */
+        header{
+            background:var(--teal); padding:10px 18px; position:relative; z-index:100;
+            display:flex;justify-content:space-between;align-items:center;
+            box-shadow:0 2px 10px rgba(0,0,0,0.25); height: 57px; flex-shrink: 0;
+        }
+        .hdr-left{display:flex;align-items:center;gap:10px;}
+        .hdr-logo{
+            width:36px;height:36px;border-radius:50%; background:rgba(255,255,255,0.2);
+            display:flex;align-items:center;justify-content:center; font-size:1.2rem;
+        }
+        .hdr-title{margin:0;font-size:1.1rem;color:#fff;font-weight:700;letter-spacing:-0.3px;}
+        .hdr-sub{font-size:0.7rem;color:rgba(255,255,255,0.7);margin-top:1px;}
+        .hdr-right{display:flex;align-items:center;gap:8px;}
+        .back-btn{
+            background:rgba(255,255,255,0.15);color:#fff;border:none;
+            padding:7px 14px;border-radius:20px;font-weight:600;
+            cursor:pointer;transition:.15s;font-family:inherit;font-size:0.88rem;
+        }
+
+        /* ── Context Headers (Multi-Selection Menus) ── */
+        .ctx-hdr {
+            position: fixed; top: 0; left: 0; right: 0; height: 57px;
+            background: var(--teal-dark); z-index: 300;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 18px; box-shadow:0 2px 10px rgba(0,0,0,0.25);
+            transform: translateY(-100%); transition: transform 0.2s ease;
+        }
+        .ctx-hdr.open { transform: translateY(0); }
+        .ctx-left { display: flex; align-items: center; gap: 14px; color: #fff; font-weight: 600; font-size: 1.05rem;}
+        .ctx-right { display: flex; align-items: center; gap: 4px; }
+        .ctx-btn {
+            background: transparent; color: #fff; border: none; width: 38px; height: 38px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; font-size: 1.05rem; cursor: pointer;
+            font-family: inherit; font-weight: 600; transition: .15s;
+        }
+        .ctx-btn:hover { background: rgba(255,255,255,0.15); }
+        .ctx-btn.del { color: #fca5a5; }
+
+        /* ── Page wrap ── */
+        .container{
+            max-width:680px; margin:0 auto; background:var(--chat-bg);
+            height:calc(100% - 57px); display: flex; flex-direction: column; position: relative;
+        }
+
+        /* ── Layouts ── */
+        #dashboard { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+        #patientDetail { display: flex; flex-direction: column; height: 100%; overflow: hidden; background:var(--chat-bg); }
+
+        /* ── Search & Filter Bars ── */
+        .search-wrapper { display: flex; gap: 10px; align-items: center; padding: 14px; flex-shrink: 0; position: relative; }
+        .g-search { flex: 1; position:relative; }
+        .g-search input{
+            width:100%; height: 38px; padding: 0 16px 0 38px; border:none; border-radius:20px; background:rgba(255,255,255,0.85);
+            font-size:0.88rem; outline:none; font-family:inherit; color:var(--text); box-shadow:var(--shadow-sm);
+        }
+        .g-search input:focus{background:#fff; box-shadow:0 0 0 2px rgba(18,140,126,0.35);}
+        .g-search input::placeholder{color:var(--muted);}
+        .g-search .si{ position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:0.85rem; pointer-events:none; }
+        
+        .filter-btn {
+            height: 38px; padding: 0 16px; border-radius: 20px; border: 1px solid var(--border);
+            background: #fff; color: var(--muted); font-size: 0.85rem; font-weight: 600;
+            display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; 
+            white-space: nowrap; box-shadow: var(--shadow-sm); flex-shrink: 0; font-family: inherit;
+        }
+        .filter-btn.active-filter { background: var(--teal); color: #fff; border-color: var(--teal); }
+
+        /* ── Patient List ── */
+        #patientList { flex: 1; overflow-y: auto; padding: 0 14px 100px 14px; }
+        
+        /* ── Floating Action Buttons ── */
+        .fab-container { position: absolute; bottom: 24px; right: 24px; z-index: 200; display: flex; gap: 14px; align-items: center; }
+        .fab-btn {
+            width: 52px; height: 52px; border-radius: 50%; border: none; display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.3); cursor: pointer; font-family: inherit; transition: transform 0.2s;
+        }
+        .fab-btn:active { transform: scale(0.92); }
+        .fab-add { background: var(--teal); color: #fff; font-size: 2rem; font-weight: 300; line-height: 1; }
+        .fab-data { background: #fff; color: var(--teal); font-size: 1.4rem; }
+
+        /* ── Patient Cards ── */
+        .p-card{
+            background:#fff;border-radius:var(--r); padding:13px 15px;box-shadow:var(--shadow-sm);
+            margin-bottom:9px;cursor:pointer; border:1px solid var(--border);
+            display:flex;justify-content:space-between;align-items:flex-start; gap:10px;
+            transition: background 0.2s ease, transform 0.12s;
+            -webkit-user-select: none; user-select: none;
+        }
+        .p-card:hover{transform:translateY(-1px);box-shadow:var(--shadow-md);}
+        .p-card.selected-card { background: rgba(18, 140, 126, 0.22); border-color: var(--teal); }
+        
+        .p-card-left{display:flex;align-items:flex-start;gap:13px;flex:1;min-width:0;}
+        .p-avatar{
+            width:44px;height:44px;border-radius:50%;flex-shrink:0; background:linear-gradient(135deg,var(--teal),var(--teal-dark));
+            display:flex;align-items:center;justify-content:center; color:#fff;font-weight:700;font-size:1rem;
+        }
+        .p-info{flex:1;min-width:0;}
+        .p-name{font-size:.98rem;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .p-time{font-size:.75rem;color:var(--muted);margin-top:2px;}
+        
+        .snippet-list { display:flex; flex-direction:column; gap:6px; margin-top:8px; }
+        .p-snippet{
+            font-size:.78rem;color:var(--teal-dark); background:rgba(18,140,126,0.08); padding:6px 10px;border-radius:6px;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap; border: 1px solid rgba(18,140,126,0.15);
+            transition: background 0.2s;
+        }
+        .p-snippet:hover { background: rgba(18,140,126,0.15); }
+        .p-card-right{display:flex;align-items:center;gap:6px;flex-shrink:0;height:44px;}
+        .p-chevron{color:var(--muted);font-size:1.1rem;font-weight:300;}
+
+        /* ── Modals & Popups ── */
+        .overlay{ display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:400;align-items:center;justify-content:center;backdrop-filter:blur(3px); }
+        .overlay.open{display:flex;}
+        .modal{ background:#fff;border-radius:18px;padding:26px 22px;width:90%;max-width:360px;box-shadow:0 24px 64px rgba(0,0,0,.25);animation:mIn .18s ease; }
+        @keyframes mIn{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
+        .modal-title{font-size:1.1rem;font-weight:700;margin:0 0 6px;}
+        .modal-sub{font-size:.82rem;color:var(--muted);margin-bottom:16px;}
+        .modal-inp{ width:100%;padding:11px 15px; border:1.5px solid var(--border);border-radius:10px; font-size:.96rem;font-family:inherit;outline:none;margin-bottom:14px; color:var(--text);}
+        .modal-row{display:flex;gap:9px;}
+        .mbtn{ flex:1;padding:10px;border:none;border-radius:10px;font-weight:600;font-size:.92rem;cursor:pointer;font-family:inherit; transition: .15s;}
+        .mbtn.pri{background:var(--teal);color:#fff;}
+        .mbtn.sec{background:var(--input-bg);color:var(--muted);}
+        .mbtn.danger{background:var(--danger);color:#fff;}
+        
+        .empty-state{ text-align:center;padding:50px 20px;color:var(--muted); }
+        .empty-state .ei{font-size:3rem;margin-bottom:12px;}
+        .empty-state .et{font-weight:600;font-size:1rem;margin-bottom:6px;color:var(--text);}
+        .empty-state .es{font-size:.85rem;}
+
+        .popup-menu {
+            position: absolute; background: #fff; border-radius: 12px; box-shadow: var(--shadow-md); 
+            display: flex; flex-direction: column; overflow: hidden; z-index: 500; 
+            animation: popUp 0.15s ease; border: 1px solid var(--border); min-width: 160px;
+        }
+        @keyframes popUp { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .popup-menu button, .filter-opt {
+            padding: 12px 20px; border: none; background: transparent; font-size: 0.95rem;
+            display: flex; align-items: center; gap: 12px; cursor: pointer; text-align: left;
+            border-bottom: 1px solid var(--border); font-family: inherit; font-weight: 500; color: var(--text);
+            transition: 0.15s;
+        }
+        .popup-menu button:last-child { border-bottom: none; }
+        .popup-menu button:hover, .filter-opt:hover { background: var(--input-bg); }
+        .filter-opt input { cursor: pointer; accent-color: var(--teal); transform: scale(1.15); margin-right: 4px; }
+
+        /* ── Patient Detail Header ── */
+        .pd-top { flex-shrink: 0; background: #fff; border-bottom: 1px solid var(--border); }
+        .det-hdr{ padding:12px 16px; display:flex;align-items:center;gap:13px; }
+        .det-avatar{ width:44px;height:44px;border-radius:50%; background:linear-gradient(135deg,var(--teal),var(--teal-dark)); display:flex;align-items:center;justify-content:center; color:#fff;font-weight:700;font-size:1.1rem; }
+        .det-name{font-size:1.1rem;font-weight:700;}
+        .det-label{font-size:.75rem;color:var(--muted);margin-top:2px;}
+        
+        /* ── Tabs ── */
+        .tabs-wrap {
+            display: flex; overflow-x: auto; gap: 8px; padding: 0 16px 12px 16px; scrollbar-width: none; 
+        }
+        .tabs-wrap::-webkit-scrollbar { display: none; }
+        .tab-btn {
+            background: var(--input-bg); color: var(--muted); border: 1px solid transparent;
+            padding: 8px 16px; border-radius: 20px; font-weight: 600; font-size: 0.85rem;
+            white-space: nowrap; cursor: pointer; font-family: inherit; transition: 0.2s;
+        }
+        .tab-btn.active { background: var(--teal-dark); color: #fff; box-shadow: var(--shadow-sm); }
+        
+        /* ── Message List Area ── */
+        #messageList {
+            flex: 1; overflow-y: auto; padding: 16px 14px; display: flex; flex-direction: column; gap: 6px;
+        }
+
+        .msg-row { display:flex;align-items:flex-start; gap:6px; position:relative; border-radius: 8px; padding: 2px 4px; transition: background 0.3s ease; }
+        .msg-row.selected-msg { background: rgba(18, 140, 126, 0.22); }
+        .msg-row.highlight-flash { animation: flashMsg 2s ease-out; }
+        @keyframes flashMsg { 0% { background: rgba(37, 211, 102, 0.4); } 100% { background: transparent; } }
+
+        .bubble {
+            background:#fff; border-radius:0 12px 12px 12px; padding:8px 12px; box-shadow:0 1px 2px rgba(0,0,0,.08);
+            flex:1; font-size:.9rem; line-height:1.45; word-break:break-word; border:1px solid rgba(0,0,0,.04);
+            min-width:0; -webkit-touch-callout: none; user-select: none; cursor: pointer; position: relative;
+        }
+        .msg-row.is-task .bubble{ border-radius:12px; border-left:4px solid var(--teal); background:#f8fffc; }
+        .msg-row.is-done .bubble{ background:#f8fafc; border-left-color:var(--muted); }
+        
+        /* Marking System Styles */
+        .bubble.mark-critical { background: #fee2e2; border-color: #f87171; border-left: 4px solid #ef4444; }
+        .bubble.mark-follow_up { background: #ffedd5; border-color: #fdba74; border-left: 4px solid #f97316; }
+        .bubble.mark-pending { background: #e0f2fe; border-color: #7dd3fc; border-left: 4px solid #0ea5e9; }
+        
+        .mark-badge { 
+            font-size: 0.7rem; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; 
+            padding: 2px 6px; border-radius: 4px; margin-bottom: 6px; 
+        }
+        .mark-badge.critical { background: #ef4444; color: #fff; }
+        .mark-badge.follow_up { background: #f97316; color: #fff; }
+        .mark-badge.pending { background: #0ea5e9; color: #fff; }
+
+        .bubble img{max-width:100%;border-radius:8px;margin-bottom:6px;display:block;}
+        
+        /* Custom Audio Player Layout */
+        .audio-wrap { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; background: rgba(0,0,0,0.02); padding: 6px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.05); }
+        .audio-wrap audio { height: 34px; max-width: 220px; outline: none; flex-shrink: 0; }
+        .t-btn { 
+            background: var(--teal); color: #fff; border: none; padding: 6px 12px; border-radius: 12px; 
+            font-size: 0.75rem; font-weight: 600; cursor: pointer; transition: 0.2s; font-family: inherit; display:flex; align-items:center; gap:4px;
+        }
+        .t-btn:disabled { opacity: 0.6; cursor: wait; }
+        .t-btn.has-text { background: #fff; color: var(--teal-dark); border: 1px solid var(--border); box-shadow: var(--shadow-sm); }
+        
+        .bubble span.text-content { display: block; margin-bottom: 12px; }
+        
+        .msg-time { font-size: 0.65rem; color: #888; position: absolute; bottom: 6px; right: 10px; }
+        .task-cb{ width:18px;height:18px;cursor:pointer; accent-color:var(--teal-light); margin-top:10px; flex-shrink:0; }
+
+        /* ── Fixed Input Bar ── */
+        .inp-area { flex-shrink: 0; background:var(--input-bg); border-top:1px solid var(--border); display: flex; flex-direction: column; position: relative;}
+        
+        .media-preview { display: flex; gap: 10px; padding: 10px 12px 0; overflow-x: auto; scrollbar-width: none;}
+        .media-preview::-webkit-scrollbar { display: none; }
+        .prv-item { flex-shrink: 0; position: relative; display: flex; align-items: center; justify-content: center; background: #e2e8f0; border-radius: 8px; padding: 6px; box-shadow: var(--shadow-sm); }
+        .prv-item img { max-height: 50px; border-radius: 4px; }
+        .prv-item audio { height: 30px; width: 140px; }
+        .prv-rm { position: absolute; top: -6px; right: -6px; background: var(--danger); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 11px; font-weight: bold; cursor: pointer; display:flex; align-items:center; justify-content:center; }
+
+        .inp-row{ display:flex;align-items:flex-end;gap:6px; padding:8px 10px 12px; }
+        .ia-btn{ background:transparent;color:var(--muted);border:none; width:36px;height:36px;border-radius:50%; display:flex;justify-content:center;align-items:center; font-size:1.15rem;cursor:pointer; flex-shrink:0; transition: .15s;}
+        .ia-btn:hover { background: var(--border); }
+        .txt-wrap{ flex:1;background:#fff;border-radius:20px; padding:6px 12px; display:flex;align-items:flex-end; box-shadow:var(--shadow-sm); }
+        .txt-inp{ flex:1;border:none;outline:none; font-size:.95rem;font-family:inherit; resize:none;overflow:hidden;background:transparent; line-height:1.45;max-height:100px;overflow-y:auto; color:var(--text); }
+        .txt-inp::placeholder{color:var(--muted);}
+        .send-btn{ background:var(--teal);color:#fff;border:none; width:40px;height:40px;border-radius:50%; display:flex;align-items:center;justify-content:center; cursor:pointer;font-size:1rem; flex-shrink:0;}
+        .send-btn svg{width:18px;height:18px;fill:#fff;margin-left:2px;}
+
+        /* Recording */
+        .rec-row{ display:flex;align-items:center;justify-content:space-between; background:#fee2e2;border:1px solid #fca5a5; border-radius:20px;padding:6px 14px;flex:1; animation:rpulse 2s infinite; }
+        .rec-stop{ background:var(--danger);color:#fff;border:none; padding:5px 12px;border-radius:14px;font-weight:700; cursor:pointer;font-family:inherit;font-size:.8rem; }
+        @keyframes rpulse{ 0%{box-shadow:0 0 0 0 rgba(239,68,68,.4)} 70%{box-shadow:0 0 0 8px rgba(239,68,68,0)} 100%{box-shadow:0 0 0 0 rgba(239,68,68,0)} }
+
+        .hidden{display:none!important;}
+    </style>
+</head>
+<body onclick="closeAllPopups(event)">
+
+<!-- ── Main Header ── -->
+<header id="mainHeader">
+    <div class="hdr-left">
+        <div class="hdr-logo">🏥</div>
+        <div>
+            <h1 class="hdr-title">MedFlow</h1>
+            <div class="hdr-sub">Handover System</div>
+        </div>
+    </div>
+    <div class="hdr-right">
+        <button id="backBtn" class="back-btn hidden" onclick="showDashboard()">← Back</button>
+        <button class="back-btn" onclick="openKeyModal()" title="API Key" id="keyBtn" style="background:rgba(255,255,255,0.15);padding:7px 10px;">🔑</button>
+    </div>
+</header>
+
+<!-- ── Dashboard Context Header (Patient Selection) ── -->
+<div id="dashContextHdr" class="ctx-hdr">
+    <div class="ctx-left">
+        <button class="ctx-btn" onclick="closeDashContext()">✕</button>
+        <span id="dashCtxCount">1</span>
+    </div>
+    <div class="ctx-right">
+        <button class="ctx-btn" id="dashCtxEditBtn" onclick="openEditPtModal()" title="Edit Name">✏️</button>
+        <button class="ctx-btn del" onclick="ctxDeletePatients()" title="Delete">🗑️</button>
+    </div>
+</div>
+
+<!-- ── Message Context Header (Multi-Select) ── -->
+<div id="msgContextHdr" class="ctx-hdr">
+    <div class="ctx-left">
+        <button class="ctx-btn" onclick="closeMsgContext()">✕</button>
+        <span id="msgCtxCount">1</span>
+    </div>
+    <div class="ctx-right">
+        <!-- Edit to the left of Copy -->
+        <button class="ctx-btn" id="msgCtxEditBtn" onclick="ctxEditMsg()" title="Edit Text">✏️</button>
+        <button class="ctx-btn" id="ctxCopyBtn" onclick="ctxCopy()" title="Copy Note">📋</button>
+        
+        <button class="ctx-btn" onclick="togglePopup(event, 'fmtMenu')" title="Format">Aa</button>
+        <div id="fmtMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:50px; right:60px;">
+            <button onclick="ctxFmt('bold')"><b>Bold</b></button>
+            <button onclick="ctxFmt('strike')"><s>Strikethrough</s></button>
+            <button onclick="ctxFmt('under')"><u>Underline</u></button>
+        </div>
+        
+        <button class="ctx-btn" onclick="togglePopup(event, 'markMenu')" title="Mark Note">🏷️</button>
+        <div id="markMenu" class="popup-menu hidden" style="top:50px; right:15px;">
+            <button onclick="applyMark('critical')">🚨 Critical</button>
+            <button onclick="applyMark('follow_up')">🔄 Follow Up</button>
+            <button onclick="applyMark('pending')">⏳ Pending</button>
+            <button onclick="applyMark(null)" style="color:var(--danger)">⚪ Clear Mark</button>
+        </div>
+
+        <button class="ctx-btn del" onclick="ctxDeleteMsg()" title="Delete">🗑️</button>
+    </div>
+</div>
+
+<!-- ── Floating Bottom Actions ── -->
+<div id="fabContainer" class="fab-container">
+    <button class="fab-btn fab-add" onclick="openAddModal()" title="Add Patient">+</button>
+    <button class="fab-btn fab-data" onclick="openDataModal()" title="Data Options">📁</button>
+</div>
+
+<!-- ── Modals ── -->
+<div class="overlay" id="addModal" onclick="outsideClick(event,'addModal',closeAddModal)">
+    <div class="modal">
+        <div class="modal-title">New Patient</div>
+        <div class="modal-sub">Enter a name or bed number</div>
+        <input type="text" class="modal-inp" id="newPtName" placeholder="e.g. John Doe / Bed 4A" onkeydown="if(event.key==='Enter')addPatient()">
+        <div class="modal-row">
+            <button class="mbtn sec" onclick="closeAddModal()">Cancel</button>
+            <button class="mbtn pri" onclick="addPatient()">Add</button>
+        </div>
+    </div>
+</div>
+
+<div class="overlay" id="editPtModal" onclick="outsideClick(event,'editPtModal',closeEditPtModal)">
+    <div class="modal">
+        <div class="modal-title">Edit Patient Name</div>
+        <input type="text" class="modal-inp" id="editPtNameInp" onkeydown="if(event.key==='Enter')savePtEdit()">
+        <div class="modal-row">
+            <button class="mbtn sec" onclick="closeEditPtModal()">Cancel</button>
+            <button class="mbtn pri" onclick="savePtEdit()">Save</button>
+        </div>
+    </div>
+</div>
+
+<div class="overlay" id="dataModal" onclick="outsideClick(event,'dataModal',closeDataModal)">
+    <div class="modal">
+        <div class="modal-title">Data Management</div>
+        <div class="modal-sub">Securely backup or restore patient records.</div>
+        <div class="modal-row" style="flex-direction:column; gap:10px;">
+            <button class="mbtn sec" style="background:#f8fafc; border:1px solid #cbd5e1; color:var(--teal-dark);" onclick="exportAll(); closeDataModal()">📤 Export Data</button>
+            <button class="mbtn sec" style="background:#f8fafc; border:1px solid #cbd5e1; color:var(--teal-dark);" onclick="document.getElementById('importFile').click(); closeDataModal()">📥 Import Data</button>
+            <input type="file" id="importFile" class="hidden" accept=".json" onchange="importData(event)">
+        </div>
+        <div class="modal-row" style="margin-top:16px;">
+            <button class="mbtn pri" onclick="closeDataModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<div class="overlay" id="editMsgModal" onclick="outsideClick(event,'editMsgModal',closeEditMsgModal)">
+    <div class="modal">
+        <div class="modal-title">Edit Note</div>
+        <textarea class="modal-inp" id="editMsgInp" rows="4" style="resize:vertical; min-height:80px;"></textarea>
+        <div class="modal-row">
+            <button class="mbtn sec" onclick="closeEditMsgModal()">Cancel</button>
+            <button class="mbtn pri" onclick="saveMsgEdit()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Transcription View Modal -->
+<div class="overlay" id="transcriptModal" onclick="outsideClick(event,'transcriptModal',closeTranscriptModal)">
+    <div class="modal">
+        <div class="modal-title">Audio Transcription</div>
+        <div class="modal-inp" id="transcriptText" style="min-height: 80px; max-height: 250px; overflow-y: auto; background:#f8fafc; border:none; user-select:text;"></div>
+        <div class="modal-row">
+            <button class="mbtn sec" onclick="closeTranscriptModal()">Close</button>
+            <button class="mbtn pri" onclick="copyTranscription()">Copy</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── API Key Modal ── -->
+<div class="overlay" id="keyModal" onclick="outsideClick(event,'keyModal',closeKeyModal)">
+    <div class="modal">
+        <div class="modal-title">🔑 Groq API Key</div>
+        <div class="modal-sub">Your key is saved locally on this device only. Get one free at console.groq.com</div>
+        <input type="password" class="modal-inp" id="keyInp" placeholder="gsk_..." />
+        <div id="keyStatus" style="font-size:0.78rem;margin:-8px 0 12px;color:var(--muted);"></div>
+        <div class="modal-row">
+            <button class="mbtn sec" onclick="closeKeyModal()">Cancel</button>
+            <button class="mbtn pri" onclick="saveKey()">Save Key</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Main Container ── -->
+<div class="container" id="mainView">
+
+    <!-- Dashboard -->
+    <div id="dashboard">
+        <div class="search-wrapper">
+            <div class="g-search">
+                <span class="si">🔍</span>
+                <input type="text" id="globalSearch" placeholder="Search patients or notes…" oninput="filterDashboard()">
+            </div>
+            
+            <button class="filter-btn" id="dashFilterBtn" onclick="togglePopup(event, 'dashFilterMenu')">All Notes</button>
+            <!-- Dropdown Filter Dashboard -->
+            <div id="dashFilterMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:calc(100% - 5px); right:14px;">
+                <label class="filter-opt"><input type="checkbox" value="critical" onchange="toggleFilter('dash','critical')"> 🚨 Critical</label>
+                <label class="filter-opt"><input type="checkbox" value="follow_up" onchange="toggleFilter('dash','follow_up')"> 🔄 Follow Up</label>
+                <label class="filter-opt"><input type="checkbox" value="pending" onchange="toggleFilter('dash','pending')"> ⏳ Pending</label>
+                <div class="filter-opt" style="justify-content:center; color:var(--danger); border-bottom:none; border-top:1px solid var(--border);" onclick="clearFilters('dash')">Reset</div>
+            </div>
+        </div>
+        <div id="patientList"></div>
+    </div>
+
+    <!-- Patient Detail -->
+    <div id="patientDetail" class="hidden">
+        
+        <!-- Top Fixed Area -->
+        <div class="pd-top">
+            <div class="det-hdr">
+                <div class="det-avatar" id="detAvatar"></div>
+                <div>
+                    <div class="det-name" id="detName"></div>
+                    <div class="det-label">Active patient</div>
+                </div>
+            </div>
+            
+            <!-- Exact same structure for the search/filter area -->
+            <div class="search-wrapper" style="padding: 12px 16px;">
+                <div class="g-search">
+                    <span class="si">🔍</span>
+                    <input type="text" id="ptSearchInp" placeholder="Search in current tab..." oninput="renderCurrentTab()">
+                </div>
+                
+                <button class="filter-btn" id="tabFilterBtn" onclick="togglePopup(event, 'tabFilterMenu')">All Notes</button>
+                <!-- Dropdown Filter Tab -->
+                <div id="tabFilterMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:calc(100% - 5px); right:16px;">
+                    <label class="filter-opt"><input type="checkbox" value="critical" onchange="toggleFilter('tab','critical')"> 🚨 Critical</label>
+                    <label class="filter-opt"><input type="checkbox" value="follow_up" onchange="toggleFilter('tab','follow_up')"> 🔄 Follow Up</label>
+                    <label class="filter-opt"><input type="checkbox" value="pending" onchange="toggleFilter('tab','pending')"> ⏳ Pending</label>
+                    <div class="filter-opt" style="justify-content:center; color:var(--danger); border-bottom:none; border-top:1px solid var(--border);" onclick="clearFilters('tab')">Reset</div>
+                </div>
+            </div>
+            
+            <div class="tabs-wrap" id="tabsContainer">
+                <button class="tab-btn active" onclick="switchTab('tasks')" id="tab-tasks">✅ Tasks</button>
+                <button class="tab-btn" onclick="switchTab('history')" id="tab-history">📜 History</button>
+                <button class="tab-btn" onclick="switchTab('investigations')" id="tab-investigations">🔍 Investigations</button>
+                <button class="tab-btn" onclick="switchTab('labs')" id="tab-labs">🧪 Labs</button>
+            </div>
+        </div>
+
+        <!-- Scrollable Message List -->
+        <div id="messageList"></div>
+
+        <!-- Bottom Fixed Input Area -->
+        <div class="inp-area">
+            <div id="previewArea" class="media-preview hidden"></div>
+            
+            <div class="popup-menu hidden" id="attachMenu" style="bottom:65px; left:14px; transform-origin:bottom left;">
+                <button onclick="document.getElementById('fileCam').click()">📸 Take Photo</button>
+                <button onclick="document.getElementById('fileGal').click()">🖼️ Gallery</button>
+            </div>
+
+            <div class="inp-row" id="inputRow">
+                <input type="file" id="fileCam" accept="image/*" capture="environment" class="hidden" onchange="handleImageSelect(this)">
+                <!-- Adding multiple attribute here allows multi-select from gallery -->
+                <input type="file" id="fileGal" accept="image/jpeg,image/png,image/webp,image/gif" multiple class="hidden" onchange="handleImageSelect(this)">
+                
+                <button class="ia-btn" id="attachBtn" onclick="togglePopup(event, 'attachMenu')" title="Attach">📎</button>
+                <!-- Direct click to record audio -->
+                <button class="ia-btn" onclick="startAudioRec()" title="Voice note">🎤</button>
+                
+                <div class="txt-wrap">
+                    <textarea class="txt-inp" id="txtInp" rows="1" placeholder="Type a note…" oninput="grow(this)"></textarea>
+                </div>
+                <button class="send-btn" onclick="sendText()"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
+            </div>
+            
+            <div class="inp-row hidden" id="recordRow">
+                <div style="flex:1;display:flex;flex-direction:column;gap:5px;">
+                    <div class="rec-row">
+                        <span id="recLabel" style="color:var(--danger);font-weight:700;font-size:.88rem;">🔴 Recording Audio…</span>
+                        <button class="rec-stop" onclick="stopMic()">⏹ Save</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// ── DB & Globals ──
+const db = new Dexie("MedFlowPro14");
+db.version(1).stores({ patients: "++id, name, lastModified" });
+
+let currentPatient = null;
+let currentTab = 'tasks';
+
+// Media Globals
+let recorder = null;
+let audioStreamRef = null;
+let audioChunks = [];
+
+const SECTIONS = {
+    'tasks': { isTask: true },
+    'history': { isTask: false },
+    'investigations': { isTask: false },
+    'labs': { isTask: false }
+};
+
+const TAGS = {
+    'critical': { label: 'Critical', icon: '🚨' },
+    'follow_up': { label: 'Follow Up', icon: '🔄' },
+    'pending': { label: 'Pending', icon: '⏳' }
+};
+
+// Now storing arrays of multiple medias
+let currentStaging = { images: [], audios: [] };
+
+// Selections
+let selectedMsgs = []; 
+let selectedPts = [];
+
+// Filters
+let dashFilters = new Set();
+let tabFilters = new Set();
+
+// ── Modals & Popups ──
+function outsideClick(e, id, closeFn) { if (e.target.id === id) closeFn(); }
+function openAddModal() { document.getElementById('addModal').classList.add('open'); setTimeout(()=>document.getElementById('newPtName').focus(), 80); }
+function closeAddModal() { document.getElementById('addModal').classList.remove('open'); document.getElementById('newPtName').value = ''; }
+function openDataModal() { document.getElementById('dataModal').classList.add('open'); }
+function closeDataModal() { document.getElementById('dataModal').classList.remove('open'); }
+function closeEditMsgModal() { document.getElementById('editMsgModal').classList.remove('open'); }
+function closeEditPtModal() { document.getElementById('editPtModal').classList.remove('open'); }
+
+function togglePopup(e, menuId) {
+    e.stopPropagation();
+    const menu = document.getElementById(menuId);
+    menu.classList.toggle('hidden');
+}
+
+function closeAllPopups(e) {
+    ['attachMenu', 'fmtMenu', 'markMenu', 'dashFilterMenu', 'tabFilterMenu'].forEach(id => {
+        const menu = document.getElementById(id);
+        if(menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) {
+            menu.classList.add('hidden');
+        }
+    });
+}
+
+// ── Filter Logic ──
+function toggleFilter(context, mark) {
+    const set = context === 'dash' ? dashFilters : tabFilters;
+    if (set.has(mark)) set.delete(mark);
+    else set.add(mark);
+
+    updateFilterUI(context);
+    if(context === 'dash') filterDashboard();
+    else renderCurrentTab();
+}
+
+function clearFilters(context) {
+    const set = context === 'dash' ? dashFilters : tabFilters;
+    set.clear();
+    updateFilterUI(context);
+    if(context === 'dash') filterDashboard();
+    else renderCurrentTab();
+}
+
+function updateFilterUI(context) {
+    const set = context === 'dash' ? dashFilters : tabFilters;
+    const btn = document.getElementById(context + 'FilterBtn');
+    
+    if (set.size > 0) {
+        btn.classList.add('active-filter');
+        btn.innerHTML = 'Filtered';
+    } else {
+        btn.classList.remove('active-filter');
+        btn.innerHTML = 'All Notes';
+    }
+    
+    const menu = document.getElementById(context + 'FilterMenu');
+    ['critical', 'follow_up', 'pending'].forEach(mark => {
+        const cb = menu.querySelector(`input[value="${mark}"]`);
+        if(cb) cb.checked = set.has(mark);
+    });
+}
+
+// ── Utils ──
+function initials(name) { return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() || '?'; }
+function fmtTime(ts) { return !ts ? '' : new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
+function escHtml(s) { return !s ? '' : s.replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>'); }
+
+// ── Dashboard (Patients) ──
+async function addPatient() {
+    const inp = document.getElementById('newPtName');
+    const name = inp.value.trim();
+    if (!name) return;
+    await db.patients.add({ name, lastModified: Date.now(), sections:{ history:[], investigations:[], labs:[], tasks:[] } });
+    closeAddModal(); // ── API Key Management ──
+function openKeyModal() {
+    const existing = localStorage.getItem('groq_api_key') || '';
+    document.getElementById('keyInp').value = existing;
+    document.getElementById('keyStatus').textContent = existing ? '✅ Key saved — you can update it here.' : '';
+    document.getElementById('keyModal').classList.add('open');
+    setTimeout(() => document.getElementById('keyInp').focus(), 80);
+}
+function closeKeyModal() {
+    document.getElementById('keyModal').classList.remove('open');
+}
+function saveKey() {
+    const val = document.getElementById('keyInp').value.trim();
+    if (!val.startsWith('gsk_')) { document.getElementById('keyStatus').textContent = '❌ Invalid key — should start with gsk_'; return; }
+    localStorage.setItem('groq_api_key', val);
+    updateKeyBtnState();
+    closeKeyModal();
+}
+function updateKeyBtnState() {
+    const btn = document.getElementById('keyBtn');
+    btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
+    btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
+}
+
+loadDashboard();
+updateKeyBtnState();
+}
+
+async function loadDashboard() {
+    try {
+        const pts = await db.patients.orderBy('lastModified').reverse().toArray();
+        renderPatients(pts);
+    } catch(e) { document.getElementById('patientList').innerHTML = `<div class="empty-state">Error loading</div>`; }
+}
+
+function renderPatients(pts) {
+    const term = document.getElementById('globalSearch').value.toLowerCase().trim();
+    const list = document.getElementById('patientList');
+    list.innerHTML = '';
+
+    const filtered = pts.filter(p => {
+        if(!p.sections) return false;
+        
+        let textMatch = !term || p.name.toLowerCase().includes(term);
+        let hasMarkedNote = false;
+        let hasTextNote = false;
+
+        for(const sec of Object.values(p.sections)) {
+            if(!Array.isArray(sec)) continue;
+            if(!hasTextNote && term) {
+                hasTextNote = sec.some(e => e.text && e.text.toLowerCase().includes(term));
+            }
+            if(dashFilters.size > 0 && !hasMarkedNote) {
+                hasMarkedNote = sec.some(e => dashFilters.has(e.mark));
+            }
+        }
+        
+        let passText = (!term || textMatch || hasTextNote);
+        let passMark = (dashFilters.size === 0 || hasMarkedNote);
+        return passText && passMark;
+    });
+
+    if (!filtered.length) {
+        list.innerHTML = `<div class="empty-state"><div class="ei">${pts.length ? '🔍' : '👥'}</div><div class="et">${pts.length ? 'No matches' : 'No patients'}</div></div>`;
+        return;
+    }
+
+    filtered.forEach(p => {
+        let snippetsHtml = '';
+        if (term || dashFilters.size > 0) {
+            let matches = [];
+            for (const [secId, sec] of Object.entries(p.sections)) {
+                if(!Array.isArray(sec)) continue;
+                sec.forEach((e, idx) => {
+                    let matchT = !term || (e.text && e.text.toLowerCase().includes(term));
+                    let matchM = (dashFilters.size === 0) || dashFilters.has(e.mark);
+                    if (matchT && matchM && e.text) {
+                        matches.push({ text: e.text, secId, idx, mark: e.mark });
+                    }
+                });
+            }
+            if(matches.length === 0) {
+                 for (const [secId, sec] of Object.entries(p.sections)) {
+                    if(!Array.isArray(sec)) continue;
+                    sec.forEach((e, idx) => {
+                        let matchT = term && (e.text && e.text.toLowerCase().includes(term));
+                        let matchM = dashFilters.size > 0 && dashFilters.has(e.mark);
+                        if ((matchT || matchM) && e.text) { matches.push({ text: e.text, secId, idx, mark: e.mark }); }
+                    });
+                }
+            }
+
+            if(matches.length > 0) {
+                snippetsHtml = `<div class="snippet-list">` + 
+                    matches.slice(0, 8).map(m => {
+                        const limit = m.text.length > 55 ? m.text.substring(0,55) + '…' : m.text;
+                        const badge = m.mark ? `[${TAGS[m.mark].icon}] ` : '';
+                        return `<div class="p-snippet" onclick="jumpToMessage(event, ${p.id}, '${m.secId}', ${m.idx})">${badge}"${limit}"</div>`;
+                    }).join('') + `</div>`;
+            }
+        }
+        
+        const isSel = selectedPts.includes(p.id);
+        const d = document.createElement('div');
+        d.className = 'p-card' + (isSel ? ' selected-card' : '');
+        d.onclick = (e) => handlePtClick(e, p.id);
+        d.innerHTML = `
+            <div class="p-card-left">
+                <div class="p-avatar">${initials(p.name)}</div>
+                <div class="p-info">
+                    <div class="p-name">${p.name}</div>
+                    <div class="p-time">Updated ${fmtTime(p.lastModified)}</div>
+                    ${snippetsHtml}
+                </div>
+            </div>
+            <div class="p-card-right"><span class="p-chevron">›</span></div>`;
+        
+        bindLongPressPt(d, p.id);
+        list.appendChild(d);
+    });
+}
+
+function filterDashboard() { db.patients.toArray().then(renderPatients); }
+
+// ── Patient Selection (Dashboard) ──
+function bindLongPressPt(el, id) {
+    let timer, isMoving = false;
+    const start = (e) => { if (e.type==='mousedown' && e.button!==0) return; isMoving = false; timer = setTimeout(() => { if(!isMoving) togglePtSelection(id, true); }, 400); };
+    const move = () => { isMoving = true; clearTimeout(timer); };
+    const cancel = () => { clearTimeout(timer); };
+    
+    el.addEventListener('mousedown', start); el.addEventListener('touchstart', start, {passive: true});
+    el.addEventListener('touchmove', move, {passive: true}); el.addEventListener('mousemove', move, {passive: true});
+    el.addEventListener('mouseup', cancel); el.addEventListener('mouseleave', cancel); el.addEventListener('touchend', cancel);
+    el.addEventListener('contextmenu', e => { e.preventDefault(); if(selectedPts.length === 0) togglePtSelection(id, true); });
+}
+
+function handlePtClick(e, id) {
+    if (selectedPts.length > 0) { e.preventDefault(); e.stopPropagation(); togglePtSelection(id); } 
+    else { openPatient(id); }
+}
+
+function togglePtSelection(id, forceAdd = false) {
+    const pos = selectedPts.indexOf(id);
+    if (pos >= 0 && !forceAdd) { selectedPts.splice(pos, 1); } 
+    else if (pos === -1) { selectedPts.push(id); }
+    
+    if (selectedPts.length === 0) closeDashContext(); else updateDashContext();
+    filterDashboard(); 
+}
+
+function updateDashContext() {
+    document.getElementById('dashContextHdr').classList.add('open');
+    document.getElementById('dashCtxCount').textContent = `${selectedPts.length} selected`;
+    document.getElementById('dashCtxEditBtn').style.display = (selectedPts.length === 1) ? 'flex' : 'none';
+    if(navigator.vibrate) navigator.vibrate(40);
+}
+
+function closeDashContext() {
+    document.getElementById('dashContextHdr').classList.remove('open');
+    selectedPts = [];
+    filterDashboard();
+}
+
+async function openEditPtModal() {
+    if(selectedPts.length !== 1) return;
+    const pt = await db.patients.get(selectedPts[0]);
+    document.getElementById('editPtNameInp').value = pt.name;
+    document.getElementById('editPtModal').classList.add('open');
+}
+async function savePtEdit() {
+    if(selectedPts.length !== 1) return;
+    const pt = await db.patients.get(selectedPts[0]);
+    pt.name = document.getElementById('editPtNameInp').value.trim();
+    await db.patients.put(pt);
+    closeEditPtModal(); closeDashContext();
+}
+async function ctxDeletePatients() {
+    if(!selectedPts.length) return;
+    if(confirm(`Delete ${selectedPts.length} patient(s)?`)) {
+        await Promise.all(selectedPts.map(id => db.patients.delete(id)));
+        closeDashContext();
+    }
+}
+
+// ── Patient Detail & Tabs ──
+async function openPatient(id, targetTab = 'tasks') {
+    currentPatient = await db.patients.get(id);
+    document.getElementById('dashboard').classList.add('hidden');
+    document.getElementById('patientDetail').classList.remove('hidden');
+    document.getElementById('backBtn').classList.remove('hidden');
+    document.getElementById('fabContainer').classList.add('hidden');
+    
+    document.getElementById('ptSearchInp').value = ''; 
+    tabFilters.clear();
+    updateFilterUI('tab');
+
+    document.getElementById('detAvatar').textContent = initials(currentPatient.name);
+    document.getElementById('detName').textContent = currentPatient.name;
+    
+    selectedMsgs = []; closeMsgContext();
+    currentStaging = { images: [], audios: [] }; updatePreview();
+    switchTab(targetTab);
+}
+
+function showDashboard() {
+    currentPatient = null;
+    closeMsgContext();
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('patientDetail').classList.add('hidden');
+    document.getElementById('backBtn').classList.add('hidden');
+    document.getElementById('fabContainer').classList.remove('hidden');
+    // ── API Key Management ──
+function openKeyModal() {
+    const existing = localStorage.getItem('groq_api_key') || '';
+    document.getElementById('keyInp').value = existing;
+    document.getElementById('keyStatus').textContent = existing ? '✅ Key saved — you can update it here.' : '';
+    document.getElementById('keyModal').classList.add('open');
+    setTimeout(() => document.getElementById('keyInp').focus(), 80);
+}
+function closeKeyModal() {
+    document.getElementById('keyModal').classList.remove('open');
+}
+function saveKey() {
+    const val = document.getElementById('keyInp').value.trim();
+    if (!val.startsWith('gsk_')) { document.getElementById('keyStatus').textContent = '❌ Invalid key — should start with gsk_'; return; }
+    localStorage.setItem('groq_api_key', val);
+    updateKeyBtnState();
+    closeKeyModal();
+}
+function updateKeyBtnState() {
+    const btn = document.getElementById('keyBtn');
+    btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
+    btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
+}
+
+loadDashboard();
+updateKeyBtnState();
+}
+
+function switchTab(tabId) {
+    currentTab = tabId;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById(`tab-${tabId}`).classList.add('active');
+
+    selectedMsgs = []; closeMsgContext();
+    renderCurrentTab();
+    scrollToBottom();
+}
+
+function renderCurrentTab() {
+    const listDiv = document.getElementById('messageList');
+    listDiv.innerHTML = '';
+    const term = document.getElementById('ptSearchInp').value.toLowerCase().trim();
+    const isTask = SECTIONS[currentTab].isTask;
+
+    if(!currentPatient.sections[currentTab] || !Array.isArray(currentPatient.sections[currentTab])) {
+        currentPatient.sections[currentTab] = [];
+    }
+
+    currentPatient.sections[currentTab].forEach((entry, idx) => {
+        let hasText = !!entry.text;
+        
+        let matchT = !term || (hasText && entry.text.toLowerCase().includes(term));
+        let matchM = (tabFilters.size === 0) || tabFilters.has(entry.mark);
+
+        if (!matchT || !matchM) return;
+
+        const isSel = selectedMsgs.includes(idx);
+        const row = document.createElement('div');
+        row.className = 'msg-row' + (isTask ? ' is-task' : '') + (isTask && entry.done ? ' is-done' : '') + (isSel ? ' selected-msg' : '');
+        row.id = `msg-${idx}`;
+
+        let td = [];
+        if (entry.strike) td.push('line-through');
+        if (entry.under)  td.push('underline');
+        if (isTask && entry.done) td = ['line-through'];
+        
+        const spanStyle = [
+            entry.bold ? 'font-weight:700' : '',
+            td.length  ? `text-decoration:${td.join(' ')}` : '',
+            isTask && entry.done ? 'color:var(--muted)' : ''
+        ].filter(Boolean).join(';');
+
+        let markHtml = '';
+        let bubbleClass = 'bubble';
+        if(entry.mark && TAGS[entry.mark]) {
+            bubbleClass += ` mark-${entry.mark}`;
+            markHtml = `<div class="mark-badge ${entry.mark}">${TAGS[entry.mark].icon} ${TAGS[entry.mark].label}</div>`;
+        }
+
+        let mediaHtml = '';
+
+        // Helper to generate image block with OCR button
+        const generateImageBlock = (imgBlob, ocrText, imgIndex) => {
+            const hasOcr = !!ocrText;
+            const btnClass = hasOcr ? "t-btn has-text" : "t-btn";
+            const btnIcon = hasOcr ? "📄" : "🔍";
+            const btnText = hasOcr ? "View OCR" : "Read Text";
+            const btnId = `ocrbtn-${idx}-${imgIndex}`;
+            return `
+            <div style="margin-bottom:8px;">
+                <img src="${URL.createObjectURL(imgBlob)}" style="max-width:100%;border-radius:8px;display:block;margin-bottom:4px;">
+                <button id="${btnId}" class="${btnClass}" onclick="handleOCR(event, ${idx}, ${imgIndex})">${btnIcon} ${btnText}</button>
+            </div>`;
+        };
+
+        // Images (Legacy single + Modern array)
+        if(entry.image) mediaHtml += generateImageBlock(entry.image, entry.legacyImageOcr || null, -1);
+        if(entry.images && entry.images.length > 0) {
+            entry.images.forEach((img, i) => {
+                const ocrText = entry.imageOcr && entry.imageOcr[i] ? entry.imageOcr[i] : null;
+                mediaHtml += generateImageBlock(img, ocrText, i);
+            });
+        }
+        
+        // Audios (Legacy single + Modern array) with Transcribe Buttons
+        // Helper to generate the audio block
+        const generateAudioBlock = (audioBlob, tText, audioIndex) => {
+            const hasTrans = !!tText;
+            const btnClass = hasTrans ? "t-btn has-text" : "t-btn";
+            const btnIcon = hasTrans ? "📄" : "📝";
+            const btnText = hasTrans ? "View Transcript" : "Transcribe";
+            const btnId = `tbtn-${idx}-${audioIndex}`;
+            
+            return `
+            <div class="audio-wrap">
+                <audio controls src="${URL.createObjectURL(audioBlob)}"></audio>
+                <button id="${btnId}" class="${btnClass}" onclick="handleTranscribe(event, ${idx}, ${audioIndex})">
+                    ${btnIcon} ${btnText}
+                </button>
+            </div>`;
+        };
+
+        if(entry.audio) { // legacy
+            let trans = entry.legacyTranscription || null;
+            mediaHtml += generateAudioBlock(entry.audio, trans, -1);
+        }
+        if(entry.audios && entry.audios.length > 0) {
+            entry.audios.forEach((aud, i) => {
+                let trans = (entry.transcriptions && entry.transcriptions[i]) ? entry.transcriptions[i] : null;
+                mediaHtml += generateAudioBlock(aud, trans, i);
+            });
+        }
+        
+        let textHtml = '';
+        if(hasText) {
+            const formattedText = escHtml(entry.text).replace(/\n/g, '<br>');
+            textHtml = `<span class="text-content" style="${spanStyle}">${formattedText}</span>`;
+        }
+        
+        let timeStr = entry.timestamp ? fmtTime(entry.timestamp) : '';
+        if (entry.edited && timeStr) timeStr = 'Edited ' + timeStr;
+        const timeHtml = `<span class="msg-time">${timeStr}</span>`;
+        
+        const leftPart = isTask ? `<input type="checkbox" class="task-cb" ${entry.done?'checked':''} onchange="toggleTask(${idx},this.checked)">` : ``;
+
+        row.innerHTML = `
+            ${leftPart}
+            <div class="${bubbleClass}" onclick="handleBubbleClick(event, ${idx})">
+                ${markHtml}
+                ${mediaHtml}
+                ${textHtml}
+                ${timeHtml}
+            </div>`;
+            
+        bindLongPressMsg(row.querySelector('.bubble'), idx);
+        listDiv.appendChild(row);
+    });
+}
+
+function scrollToBottom() {
+    const ml = document.getElementById('messageList');
+    ml.scrollTop = ml.scrollHeight;
+}
+
+// ── Interactive Jump ──
+async function jumpToMessage(e, pId, secId, idx) {
+    e.stopPropagation();
+    await openPatient(pId, secId);
+    setTimeout(() => {
+        const el = document.getElementById(`msg-${idx}`);
+        if(el) {
+            el.scrollIntoView({behavior: 'smooth', block: 'center'});
+            el.classList.add('highlight-flash');
+            setTimeout(() => el.classList.remove('highlight-flash'), 2000);
+        }
+    }, 200);
+}
+
+// ── Transcribe Logic ──
+
+// Groq — direct browser calls (CORS supported)
+const getGroqKey = () => localStorage.getItem('groq_api_key') || '';
+
+async function processTranscription(audioBlob) {
+    if (!getGroqKey()) { alert('No API key set. Tap 🔑 in the top right to add your Groq key.'); throw new Error('No API key'); }
+    const PROMPT = 'قم بتلخيص المقطع الصوتي في bulleted list، بأهم النقط المذكورة بأختصار ووضوح، استخدم العربية الممزوجة مع الإنجليزية للكلمات الطبية مثل ESR، Creatinine, ECG, ABG';
+    const audioFile = new Blob([await audioBlob.arrayBuffer()], { type: 'audio/webm' });
+
+    const callWhisper = async (model) => {
+        const formData = new FormData();
+        formData.append('file', audioFile, 'audio.webm');
+        formData.append('model', model);
+        formData.append('prompt', PROMPT);
+        return fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${getGroqKey()}` },
+            body: formData
+        });
+    };
+
+    let res = await callWhisper('whisper-large-v3');
+    if (!res.ok) {
+        if (res.status === 429) {
+            res = await callWhisper('whisper-large-v3-turbo');
+        }
+        if (!res.ok) throw new Error(`Whisper error: ${res.status}`);
+    }
+    const data = await res.json();
+    return data.text || '';
+}
+
+async function processOCR(imageBlob) {
+    if (!getGroqKey()) { alert('No API key set. Tap 🔑 in the top right to add your Groq key.'); throw new Error('No API key'); }
+    const base64 = await new Promise(res => {
+        const r = new FileReader();
+        r.onloadend = () => res(r.result.split(',')[1]);
+        r.readAsDataURL(imageBlob);
+    });
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getGroqKey()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+            messages: [{ role: 'user', content: [
+                { type: 'image_url', image_url: { url: `data:${imageBlob.type || 'image/jpeg'};base64,${base64}` } },
+                { type: 'text', text: 'Extract only the relevant data from this medical image and write a very brief bulleted summary of the most important clinical points, be as concise as possible.' }
+            ]}],
+            max_tokens: 1024
+        })
+    });
+    if (!res.ok) throw new Error(`OCR error: ${res.status}`);
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || '';
+}
+
+async function handleOCR(e, msgIdx, imgIdx) {
+    e.stopPropagation();
+    const entry = currentPatient.sections[currentTab][msgIdx];
+
+    let existingText = imgIdx === -1 ? entry.legacyImageOcr : (entry.imageOcr && entry.imageOcr[imgIdx]);
+    if (existingText) { showTranscriptModal(existingText); return; }
+
+    const btnId = `ocrbtn-${msgIdx}-${imgIdx}`;
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.disabled = true; btn.innerHTML = "⏳ Reading..."; }
+
+    try {
+        const imgBlob = imgIdx === -1 ? entry.image : entry.images[imgIdx];
+        const text = await processOCR(imgBlob);
+        if (imgIdx === -1) { entry.legacyImageOcr = text; }
+        else { if (!entry.imageOcr) entry.imageOcr = []; entry.imageOcr[imgIdx] = text; }
+        await saveData();
+        renderCurrentTab();
+        showTranscriptModal(text);
+    } catch (err) {
+        alert("OCR failed. Please try again.");
+        if (btn) { btn.disabled = false; btn.innerHTML = "🔍 Read Text"; }
+    }
+}
+
+function showTranscriptModal(text) {
+    document.getElementById('transcriptText').textContent = text;
+    document.getElementById('transcriptModal').classList.add('open');
+}
+
+function closeTranscriptModal() {
+    document.getElementById('transcriptModal').classList.remove('open');
+}
+
+function copyTranscription() {
+    const text = document.getElementById('transcriptText').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        alert("Transcription copied!");
+    });
+}
+
+async function handleTranscribe(e, msgIdx, audioIdx) {
+    e.stopPropagation(); // prevent message selection
+    
+    let entry = currentPatient.sections[currentTab][msgIdx];
+    
+    // Check if transcription already exists
+    let existingText = null;
+    if (audioIdx === -1) { // Legacy single audio
+        existingText = entry.legacyTranscription;
+    } else {
+        if (!entry.transcriptions) entry.transcriptions = [];
+        existingText = entry.transcriptions[audioIdx];
+    }
+    
+    // If we already have text, just show it.
+    if (existingText) {
+        showTranscriptModal(existingText);
+        return;
+    }
+    
+    // No text yet? Let's process it.
+    const btnId = `tbtn-${msgIdx}-${audioIdx}`;
+    const btn = document.getElementById(btnId);
+    if(btn) {
+        btn.disabled = true;
+        btn.innerHTML = "⏳ Processing...";
+    }
+    
+    try {
+        // Get the specific blob
+        const audioBlob = audioIdx === -1 ? entry.audio : entry.audios[audioIdx];
+        
+        // Make the API call
+        const transcribedText = await processTranscription(audioBlob);
+        
+        // Save the result back to DB
+        if (audioIdx === -1) {
+            entry.legacyTranscription = transcribedText;
+        } else {
+            entry.transcriptions[audioIdx] = transcribedText;
+        }
+        
+        await saveData();
+        
+        // Refresh UI and show popup
+        renderCurrentTab();
+        showTranscriptModal(transcribedText);
+        
+    } catch (err) {
+        alert("Transcription failed. Please try again.");
+        if(btn) {
+            btn.disabled = false;
+            btn.innerHTML = "📝 Transcribe";
+        }
+    }
+}
+
+
+// ── Compression & Multiple Input ──
+async function compressImage(file) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            URL.revokeObjectURL(url);
+            const canvas = document.createElement('canvas');
+            let { width, height } = img;
+            const maxDim = 1200; 
+            if (width > maxDim || height > maxDim) {
+                if (width > height) { height = Math.round((height * maxDim) / width); width = maxDim; } 
+                else { width = Math.round((width * maxDim) / height); height = maxDim; }
+            }
+            canvas.width = width; canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', 0.65);
+        };
+        img.onerror = () => resolve(file); img.src = url;
+    });
+}
+
+async function handleImageSelect(el) {
+    document.getElementById('attachMenu').classList.add('hidden');
+    if(!el.files || el.files.length === 0) return;
+    
+    el.disabled = true;
+    for(let i=0; i < el.files.length; i++) {
+        const compressedBlob = await compressImage(el.files[i]);
+        currentStaging.images.push(compressedBlob);
+    }
+    
+    updatePreview();
+    el.value = ''; el.disabled = false;
+}
+
+function removeMedia(type, index) {
+    currentStaging[type].splice(index, 1);
+    updatePreview();
+}
+
+function updatePreview() {
+    const pv = document.getElementById('previewArea');
+    pv.innerHTML = ''; 
+    let hasContent = false;
+    
+    currentStaging.images.forEach((img, i) => {
+        hasContent = true;
+        pv.innerHTML += `<div class="prv-item"><img src="${URL.createObjectURL(img)}"><button class="prv-rm" onclick="removeMedia('images', ${i})">✕</button></div>`;
+    });
+    
+    currentStaging.audios.forEach((aud, i) => {
+        hasContent = true;
+        pv.innerHTML += `<div class="prv-item"><audio controls src="${URL.createObjectURL(aud)}"></audio><button class="prv-rm" onclick="removeMedia('audios', ${i})">✕</button></div>`;
+    });
+
+    if(hasContent) pv.classList.remove('hidden'); else pv.classList.add('hidden');
+}
+
+function grow(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+
+function sendText() {
+    const inp = document.getElementById('txtInp');
+    const text = inp.value.trim();
+    
+    if (!text && currentStaging.images.length === 0 && currentStaging.audios.length === 0) return;
+    const isTask = SECTIONS[currentTab].isTask;
+    
+    const entry = {
+        type: 'mixed', 
+        text: text, 
+        images: [...currentStaging.images], 
+        audios: [...currentStaging.audios],
+        transcriptions: new Array(currentStaging.audios.length).fill(null), // Array map for transcriptions
+        mark: null, bold: false, strike: false, under: false, timestamp: Date.now(), edited: false
+    };
+    if (isTask) entry.done = false;
+    
+    currentPatient.sections[currentTab].push(entry);
+    
+    // Reset staging & inputs
+    inp.value=''; inp.style.height='auto'; 
+    currentStaging = {images: [], audios: []}; 
+    updatePreview();
+    
+    saveData(); renderCurrentTab(); setTimeout(scrollToBottom, 50);
+}
+
+// ── Message Selection Logic ──
+function bindLongPressMsg(el, idx) {
+    let timer, isMoving = false;
+    const start = (e) => { if (e.type==='mousedown' && e.button!==0) return; isMoving = false; timer = setTimeout(() => { if(!isMoving) toggleMsgSelection(idx, true); }, 400); };
+    const move = () => { isMoving = true; clearTimeout(timer); };
+    const cancel = () => { clearTimeout(timer); };
+    el.addEventListener('mousedown', start); el.addEventListener('touchstart', start, {passive: true});
+    el.addEventListener('touchmove', move, {passive: true}); el.addEventListener('mousemove', move, {passive: true});
+    el.addEventListener('mouseup', cancel); el.addEventListener('mouseleave', cancel); el.addEventListener('touchend', cancel);
+    el.addEventListener('contextmenu', e => { e.preventDefault(); if(selectedMsgs.length === 0) toggleMsgSelection(idx, true); });
+}
+
+function handleBubbleClick(e, idx) { if (selectedMsgs.length > 0) { e.preventDefault(); e.stopPropagation(); toggleMsgSelection(idx); } }
+
+function toggleMsgSelection(idx, forceAdd = false) {
+    const pos = selectedMsgs.indexOf(idx);
+    const rowEl = document.getElementById(`msg-${idx}`);
+    if (pos >= 0 && !forceAdd) { selectedMsgs.splice(pos, 1); if(rowEl) rowEl.classList.remove('selected-msg'); } 
+    else if (pos === -1) { selectedMsgs.push(idx); if(rowEl) rowEl.classList.add('selected-msg'); }
+    if (selectedMsgs.length === 0) closeMsgContext(); else updateMsgContext();
+}
+
+function updateMsgContext() {
+    document.getElementById('msgContextHdr').classList.add('open');
+    document.getElementById('msgCtxCount').textContent = `${selectedMsgs.length} selected`;
+    
+    const editBtn = document.getElementById('msgCtxEditBtn');
+    if (selectedMsgs.length === 1) {
+        const item = currentPatient.sections[currentTab][selectedMsgs[0]];
+        editBtn.style.display = (item.text || item.type==='mixed') ? 'flex' : 'none';
+    } else { editBtn.style.display = 'none'; }
+    if(navigator.vibrate) navigator.vibrate(40);
+}
+
+function closeMsgContext() {
+    document.getElementById('msgContextHdr').classList.remove('open');
+    selectedMsgs.forEach(idx => { const row = document.getElementById(`msg-${idx}`); if(row) row.classList.remove('selected-msg'); });
+    selectedMsgs = []; 
+    document.getElementById('fmtMenu').classList.add('hidden');
+    document.getElementById('markMenu').classList.add('hidden');
+}
+
+// ── Multi-item Actions ──
+async function ctxCopy() {
+    if(!selectedMsgs.length) return;
+    const sortedIdx = [...selectedMsgs].sort((a,b) => a - b);
+    const texts = sortedIdx.map(idx => currentPatient.sections[currentTab][idx].text).filter(Boolean);
+    if(texts.length === 0) return;
+    
+    const textToCopy = texts.join('\n\n');
+    
+    const successFeedback = () => {
+        const btn = document.getElementById('ctxCopyBtn');
+        const orig = btn.innerHTML;
+        btn.innerHTML = '✓';
+        setTimeout(() => btn.innerHTML = orig, 1500);
+        setTimeout(closeMsgContext, 600);
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+        try {
+            await navigator.clipboard.writeText(textToCopy);
+            successFeedback();
+        } catch (err) { fallbackCopy(textToCopy, successFeedback); }
+    } else {
+        fallbackCopy(textToCopy, successFeedback);
+    }
+}
+
+function fallbackCopy(text, callback) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed"; ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); callback(); }
+    catch (err) { alert("Copy failed."); }
+    document.body.removeChild(ta);
+}
+
+function ctxEditMsg() {
+    if(selectedMsgs.length !== 1) return;
+    const idx = selectedMsgs[0];
+    document.getElementById('editMsgInp').value = currentPatient.sections[currentTab][idx].text || '';
+    document.getElementById('editMsgModal').classList.add('open'); setTimeout(()=>document.getElementById('editMsgInp').focus(), 80);
+}
+
+async function saveMsgEdit() {
+    if(selectedMsgs.length !== 1) return;
+    const idx = selectedMsgs[0];
+    currentPatient.sections[currentTab][idx].text = document.getElementById('editMsgInp').value.trim();
+    currentPatient.sections[currentTab][idx].timestamp = Date.now();
+    currentPatient.sections[currentTab][idx].edited = true;
+    closeEditMsgModal(); closeMsgContext(); await saveData(); renderCurrentTab();
+}
+
+async function applyMark(markType) {
+    if(!selectedMsgs.length) return;
+    selectedMsgs.forEach(idx => { currentPatient.sections[currentTab][idx].mark = markType; });
+    await saveData(); 
+    document.getElementById('markMenu').classList.add('hidden');
+    closeMsgContext(); 
+    renderCurrentTab();
+}
+
+async function ctxFmt(prop) {
+    if(!selectedMsgs.length) return;
+    const targetState = !currentPatient.sections[currentTab][selectedMsgs[0]][prop];
+    selectedMsgs.forEach(idx => { currentPatient.sections[currentTab][idx][prop] = targetState; });
+    await saveData(); renderCurrentTab(); 
+}
+
+async function ctxDeleteMsg() {
+    if(!selectedMsgs.length) return;
+    selectedMsgs.sort((a,b) => b - a);
+    selectedMsgs.forEach(idx => currentPatient.sections[currentTab].splice(idx, 1));
+    closeMsgContext(); await saveData(); renderCurrentTab();
+}
+
+// ── Misc Actions ──
+async function toggleTask(idx, done) { currentPatient.sections[currentTab][idx].done = done; await saveData(); renderCurrentTab(); }
+async function saveData() { currentPatient.lastModified = Date.now(); await db.patients.put(currentPatient); }
+
+// ── Direct Audio Recording ──
+async function startAudioRec() {
+    try {
+        audioStreamRef = await navigator.mediaDevices.getUserMedia({ audio: true });
+        recorder = new MediaRecorder(audioStreamRef); 
+        audioChunks = [];
+        
+        recorder.ondataavailable = e => { 
+            if (e.data && e.data.size > 0) audioChunks.push(e.data); 
+        };
+        
+        recorder.onstop = () => { 
+            const blobType = recorder.mimeType || 'audio/webm';
+            // Push to arrays
+            currentStaging.audios.push(new Blob(audioChunks, { type: blobType })); 
+            updatePreview(); 
+            
+            if (audioStreamRef) { 
+                audioStreamRef.getTracks().forEach(t => t.stop()); 
+                audioStreamRef = null; 
+            }
+        };
+        
+        recorder.start();
+        document.getElementById('inputRow').classList.add('hidden');
+        document.getElementById('recordRow').classList.remove('hidden');
+    } catch(err) { 
+        alert('Microphone access denied or not supported.'); 
+    }
+}
+
+function stopMic() {
+    if (recorder && recorder.state !== 'inactive') { 
+        recorder.stop(); 
+    }
+    document.getElementById('inputRow').classList.remove('hidden');
+    document.getElementById('recordRow').classList.add('hidden');
+}
+
+// ── Export / Import ──
+async function exportAll() {
+    const data = await db.patients.toArray();
+    const out = await Promise.all(data.map(async p => {
+        const clone = JSON.parse(JSON.stringify(p, (k,v)=>v instanceof Blob?undefined:v));
+        for (const sec in p.sections) {
+            clone.sections[sec] = await Promise.all(p.sections[sec].map(async e => {
+                const ec = {...e};
+                if (e.images && e.images.length) ec.images = await Promise.all(e.images.map(img => toB64(img)));
+                if (e.audios && e.audios.length) ec.audios = await Promise.all(e.audios.map(aud => toB64(aud)));
+                // Legacy
+                if (e.image instanceof Blob) ec.image = await toB64(e.image);
+                if (e.audio instanceof Blob) ec.audio = await toB64(e.audio);
+                return ec;
+            }));
+        }
+        return clone;
+    }));
+    const blob = new Blob([JSON.stringify(out)], { type:'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `MedFlow_${new Date().toISOString().split('T')[0]}.json`; a.click();
+}
+async function importData(e) {
+    const reader = new FileReader();
+    reader.onload = async ev => {
+        try {
+            const imported = JSON.parse(ev.target.result);
+            for (const p of imported) {
+                for (const sec in p.sections) {
+                    p.sections[sec] = p.sections[sec].map(entry => {
+                        if (entry.images && entry.images.length) entry.images = entry.images.map(img => fromB64(img));
+                        if (entry.audios && entry.audios.length) entry.audios = entry.audios.map(aud => fromB64(aud));
+                        // Legacy
+                        if (entry.image && typeof entry.image === 'string') entry.image = fromB64(entry.image);
+                        if (entry.audio && typeof entry.audio === 'string') entry.audio = fromB64(entry.audio);
+                        return entry;
+                    });
+                }
+                const existing = await db.patients.where('name').equals(p.name).first();
+                if (existing) { p.id = existing.id; await db.patients.put(p); } else { delete p.id; await db.patients.add(p); }
+            }
+            // ── API Key Management ──
+function openKeyModal() {
+    const existing = localStorage.getItem('groq_api_key') || '';
+    document.getElementById('keyInp').value = existing;
+    document.getElementById('keyStatus').textContent = existing ? '✅ Key saved — you can update it here.' : '';
+    document.getElementById('keyModal').classList.add('open');
+    setTimeout(() => document.getElementById('keyInp').focus(), 80);
+}
+function closeKeyModal() {
+    document.getElementById('keyModal').classList.remove('open');
+}
+function saveKey() {
+    const val = document.getElementById('keyInp').value.trim();
+    if (!val.startsWith('gsk_')) { document.getElementById('keyStatus').textContent = '❌ Invalid key — should start with gsk_'; return; }
+    localStorage.setItem('groq_api_key', val);
+    updateKeyBtnState();
+    closeKeyModal();
+}
+function updateKeyBtnState() {
+    const btn = document.getElementById('keyBtn');
+    btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
+    btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
+}
+
+loadDashboard();
+updateKeyBtnState(); alert('Import successful!');
+        } catch { alert('Invalid file format.'); }
+    };
+    if(e.target.files[0]) reader.readAsText(e.target.files[0]);
+}
+const toB64 = b => new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(r.result); r.readAsDataURL(b); });
+const fromB64 = d => {
+    const [meta, data] = d.split(','); const mime = meta.match(/:(.*?);/)[1];
+    const bstr = atob(data); let n=bstr.length; const u8 = new Uint8Array(n);
+    while(n--) u8[n]=bstr.charCodeAt(n); return new Blob([u8],{type:mime});
+};
+
+// ── API Key Management ──
+function openKeyModal() {
+    const existing = localStorage.getItem('groq_api_key') || '';
+    document.getElementById('keyInp').value = existing;
+    document.getElementById('keyStatus').textContent = existing ? '✅ Key saved — you can update it here.' : '';
+    document.getElementById('keyModal').classList.add('open');
+    setTimeout(() => document.getElementById('keyInp').focus(), 80);
+}
+function closeKeyModal() {
+    document.getElementById('keyModal').classList.remove('open');
+}
+function saveKey() {
+    const val = document.getElementById('keyInp').value.trim();
+    if (!val.startsWith('gsk_')) { document.getElementById('keyStatus').textContent = '❌ Invalid key — should start with gsk_'; return; }
+    localStorage.setItem('groq_api_key', val);
+    updateKeyBtnState();
+    closeKeyModal();
+}
+function updateKeyBtnState() {
+    const btn = document.getElementById('keyBtn');
+    btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
+    btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
+}
+
+loadDashboard();
+updateKeyBtnState();
+</script>
+</body>
+</html>
