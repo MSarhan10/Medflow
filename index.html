@@ -610,7 +610,7 @@ function updateFilterUI(context) {
 // ── Utils ──
 function initials(name) { return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() || '?'; }
 function fmtTime(ts) { return !ts ? '' : new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function escHtml(s) { return !s ? '' : s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escHtml(s) { return !s ? '' : s.replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>'); }
 
 // ── Dashboard (Patients) ──
 async function addPatient() {
@@ -966,14 +966,24 @@ const getGroqKey = () => localStorage.getItem('groq_api_key') || '';
 
 async function processTranscription(audioBlob) {
     if (!getGroqKey()) { alert('No API key set. Tap 🔑 in the top right to add your Groq key.'); throw new Error('No API key'); }
-    const PROMPT = 'قم بتلخيص المقطع الصوتي في bulleted list، بأهم النقط المذكورة بأختصار ووضوح، استخدم العربية الممزوجة مع الإنجليزية للكلمات الطبية مثل ESR، Creatinine, ECG, ABG';
+
+    // ── Step 1: Whisper STT ──
+    // Vocabulary hint prompt (not instructions — Whisper only uses this for context/spelling bias)
+    const WHISPER_VOCAB_HINT = 'طبي، مستشفى، ESR، Creatinine، ECG، ABG، CBC، CT، MRI، ICU، BP، HR، SpO2، IV، IM، PO، PRN، mg، ml، mmHg، diagnosis، follow-up، labs، ward';
+
     const audioFile = new Blob([await audioBlob.arrayBuffer()], { type: 'audio/webm' });
 
     const callWhisper = async (model) => {
         const formData = new FormData();
         formData.append('file', audioFile, 'audio.webm');
         formData.append('model', model);
-        formData.append('prompt', PROMPT);
+        formData.append('language', 'ar');
+        formData.append('temperature', '0.0');
+        formData.append('compression_ratio_threshold', '2.4');
+        formData.append('logprob_threshold', '-1.0');
+        formData.append('no_speech_threshold', '0.5');
+        formData.append('condition_on_previous_text', 'true');
+        formData.append('prompt', WHISPER_VOCAB_HINT);
         return fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${getGroqKey()}` },
@@ -988,8 +998,58 @@ async function processTranscription(audioBlob) {
         }
         if (!res.ok) throw new Error(`Whisper error: ${res.status}`);
     }
-    const data = await res.json();
-    return data.text || '';
+    const whisperData = await res.json();
+    const rawTranscript = whisperData.text || '';
+    if (!rawTranscript.trim()) return '';
+
+    // ── Step 2: LLM Semantic Summarization ──
+    const SYSTEM_PROMPT = `أنت مساعد طبي متخصص في تحليل التسجيلات الصوتية الطبية باللغة العربية المصرية الممزوجة مع الإنجليزية.
+
+مهمتك ليست نسخ الكلام حرفيًا، بل:
+- فهم المعنى والسياق من المحادثة.
+- تطبيع النطق غير الواضح إلى الكلمات الأكثر احتمالاً.
+- التعامل بشكل طبيعي مع العامية المصرية.
+- تصحيح أخطاء التعرف على الكلام الواضحة عندما يكون السياق واضحًا.
+- الحفاظ على الكلمات الإنجليزية المهمة والمصطلحات التقنية والطبية وأسماء المنتجات وأسماء الشركات والأرقام.
+- تجاهل كلمات الحشو والتكرار والبدايات الخاطئة والضوضاء العرضية في المحادثة.
+- تحويل المحادثة إلى ملخص عربي موجز في نقاط.
+
+مهم:
+- أولوية الدقة الدلالية على الدقة الصوتية.
+- إذا كانت العبارة غير واضحة، استنتج المعنى الأكثر احتمالاً من السياق.
+- استخدم العربية الفصحى الحديثة مع الحفاظ على التعبيرات المصرية المهمة عند الضرورة.
+- اجعل الإخراج موجزًا ومكثف المعلومات.
+- لا تضع طوابع زمنية.
+- لا تكتب تسميات للمتحدثين إلا إذا كان ذلك ضروريًا للغاية.
+- لا تُخرج النص الخام للتسجيل.
+
+صيغة الإخراج:
+- قائمة نقاط فقط.
+- كل نقطة تحتوي على فكرة مهمة واحدة أو بند إجراء.`;
+
+    const callLLM = async (model) => fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${getGroqKey()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            model,
+            messages: [
+                { role: 'system', content: SYSTEM_PROMPT },
+                { role: 'user', content: rawTranscript }
+            ],
+            temperature: 0.0,
+            max_tokens: 1024
+        })
+    });
+
+    let llmRes = await callLLM('llama-3.3-70b-versatile');
+    if (!llmRes.ok) {
+        if (llmRes.status === 429) {
+            llmRes = await callLLM('qwen/qwen3-32b');
+        }
+        if (!llmRes.ok) throw new Error(`LLM summarization error: ${llmRes.status}`);
+    }
+    const llmData = await llmRes.json();
+    return llmData.choices?.[0]?.message?.content || '';
 }
 
 async function processOCR(imageBlob) {
