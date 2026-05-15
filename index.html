@@ -1003,29 +1003,20 @@ async function processTranscription(audioBlob) {
     if (!rawTranscript.trim()) return '';
 
     // ── Step 2: LLM Semantic Summarization ──
-    const SYSTEM_PROMPT = `أنت مساعد طبي متخصص في تحليل التسجيلات الصوتية الطبية باللغة العربية المصرية الممزوجة مع الإنجليزية.
+    const SYSTEM_PROMPT = `You are a medical scribe for Egyptian Arabic clinical speech mixed with English terms.
 
-مهمتك ليست نسخ الكلام حرفيًا، بل:
-- فهم المعنى والسياق من المحادثة.
-- تطبيع النطق غير الواضح إلى الكلمات الأكثر احتمالاً.
-- التعامل بشكل طبيعي مع العامية المصرية.
-- تصحيح أخطاء التعرف على الكلام الواضحة عندما يكون السياق واضحًا.
-- الحفاظ على الكلمات الإنجليزية المهمة والمصطلحات التقنية والطبية وأسماء المنتجات وأسماء الشركات والأرقام.
-- تجاهل كلمات الحشو والتكرار والبدايات الخاطئة والضوضاء العرضية في المحادثة.
-- تحويل المحادثة إلى ملخص عربي موجز في نقاط.
+OUTPUT FORMAT — non-negotiable:
+- Bullet list ONLY. Start your response with "•" immediately. No intro, no prose, no transcript.
+- Each bullet = one distinct clinical fact or action item, written in Arabic.
+- Keep English medical terms exactly as spoken: drug names, investigations, vitals, units (e.g. CXR, ECG, CBC, IV, mg, mmHg).
 
-مهم:
-- أولوية الدقة الدلالية على الدقة الصوتية.
-- إذا كانت العبارة غير واضحة، استنتج المعنى الأكثر احتمالاً من السياق.
-- استخدم العربية الفصحى الحديثة مع الحفاظ على التعبيرات المصرية المهمة عند الضرورة.
-- اجعل الإخراج موجزًا ومكثف المعلومات.
-- لا تضع طوابع زمنية.
-- لا تكتب تسميات للمتحدثين إلا إذا كان ذلك ضروريًا للغاية.
-- لا تُخرج النص الخام للتسجيل.
+CONTENT RULES:
+- Capture FINAL intent only. If the speaker self-corrects (e.g. "CT chest — no wait, X-ray chest"), record only "X-ray chest".
+- Drop filler words, false starts, and repetitions entirely.
+- Infer meaning from context when pronunciation is unclear.
+- Never copy the raw transcript. Never add timestamps or speaker labels.`;
 
-صيغة الإخراج:
-- قائمة نقاط فقط.
-- كل نقطة تحتوي على فكرة مهمة واحدة أو بند إجراء.`;
+    const userMessage = `لخّص هذا التفريغ الطبي في نقاط موجزة فقط — لا تنسخه:\n\n${rawTranscript}`;
 
     const callLLM = async (model) => fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -1034,7 +1025,7 @@ async function processTranscription(audioBlob) {
             model,
             messages: [
                 { role: 'system', content: SYSTEM_PROMPT },
-                { role: 'user', content: rawTranscript }
+                { role: 'user', content: userMessage }
             ],
             temperature: 0.0,
             max_tokens: 1024
