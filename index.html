@@ -106,7 +106,6 @@
         }
         .fab-btn:active { transform: scale(0.92); }
         .fab-add { background: var(--teal); color: #fff; font-size: 2rem; font-weight: 300; line-height: 1; }
-        .fab-data { background: #fff; color: var(--teal); font-size: 1.4rem; }
 
         /* ── Patient Cards ── */
         .p-card{
@@ -292,6 +291,7 @@
     </div>
     <div class="ctx-right">
         <button class="ctx-btn" id="dashCtxEditBtn" onclick="openEditPtModal()" title="Edit Name">✏️</button>
+        <button class="ctx-btn" onclick="shareSelectedPatients()" title="Share patients">📤</button>
         <button class="ctx-btn del" onclick="ctxDeletePatients()" title="Delete">🗑️</button>
     </div>
 </div>
@@ -327,8 +327,11 @@
 
 <!-- ── Floating Bottom Actions ── -->
 <div id="fabContainer" class="fab-container">
-    <button class="fab-btn fab-add" onclick="openAddModal()" title="Add Patient">+</button>
-    <button class="fab-btn fab-data" onclick="openDataModal()" title="Data Options">📁</button>
+    <div id="fabAddMenu" class="popup-menu hidden" style="bottom:70px;right:0;transform-origin:bottom right;min-width:200px;position:absolute;">
+        <button onclick="openAddModal();closeFabMenu()">👤 New Patient</button>
+        <button onclick="document.getElementById('importFile').click();closeFabMenu()">📥 Import JSON</button>
+    </div>
+    <button class="fab-btn fab-add" onclick="toggleFabMenu(event)" title="Options" id="fabAddBtn">+</button>
 </div>
 
 <!-- ── Modals ── -->
@@ -355,20 +358,8 @@
     </div>
 </div>
 
-<div class="overlay" id="dataModal" onclick="outsideClick(event,'dataModal',closeDataModal)">
-    <div class="modal">
-        <div class="modal-title">Data Management</div>
-        <div class="modal-sub">Securely backup or restore patient records.</div>
-        <div class="modal-row" style="flex-direction:column; gap:10px;">
-            <button class="mbtn sec" style="background:#f8fafc; border:1px solid #cbd5e1; color:var(--teal-dark);" onclick="exportAll(); closeDataModal()">📤 Export Data</button>
-            <button class="mbtn sec" style="background:#f8fafc; border:1px solid #cbd5e1; color:var(--teal-dark);" onclick="document.getElementById('importFile').click(); closeDataModal()">📥 Import Data</button>
-            <input type="file" id="importFile" class="hidden" accept=".json" onchange="importData(event)">
-        </div>
-        <div class="modal-row" style="margin-top:16px;">
-            <button class="mbtn pri" onclick="closeDataModal()">Close</button>
-        </div>
-    </div>
-</div>
+<!-- Standalone import input (used by FAB dropdown) -->
+<input type="file" id="importFile" class="hidden" accept=".json" onchange="importData(event)">
 
 <div class="overlay" id="editMsgModal" onclick="outsideClick(event,'editMsgModal',closeEditMsgModal)">
     <div class="modal">
@@ -465,6 +456,7 @@
                 <button class="tab-btn" onclick="switchTab('history')" id="tab-history">📜 History</button>
                 <button class="tab-btn" onclick="switchTab('investigations')" id="tab-investigations">🔍 Investigations</button>
                 <button class="tab-btn" onclick="switchTab('labs')" id="tab-labs">🧪 Labs</button>
+                <button class="tab-btn" onclick="switchTab('management')" id="tab-management">💊 Management</button>
             </div>
         </div>
 
@@ -525,7 +517,8 @@ const SECTIONS = {
     'tasks': { isTask: true },
     'history': { isTask: false },
     'investigations': { isTask: false },
-    'labs': { isTask: false }
+    'labs': { isTask: false },
+    'management': { isTask: false }
 };
 
 const TAGS = {
@@ -549,8 +542,6 @@ let tabFilters = new Set();
 function outsideClick(e, id, closeFn) { if (e.target.id === id) closeFn(); }
 function openAddModal() { document.getElementById('addModal').classList.add('open'); setTimeout(()=>document.getElementById('newPtName').focus(), 80); }
 function closeAddModal() { document.getElementById('addModal').classList.remove('open'); document.getElementById('newPtName').value = ''; }
-function openDataModal() { document.getElementById('dataModal').classList.add('open'); }
-function closeDataModal() { document.getElementById('dataModal').classList.remove('open'); }
 function closeEditMsgModal() { document.getElementById('editMsgModal').classList.remove('open'); }
 function closeEditPtModal() { document.getElementById('editPtModal').classList.remove('open'); }
 
@@ -561,7 +552,7 @@ function togglePopup(e, menuId) {
 }
 
 function closeAllPopups(e) {
-    ['attachMenu', 'fmtMenu', 'markMenu', 'dashFilterMenu', 'tabFilterMenu'].forEach(id => {
+    ['attachMenu', 'fmtMenu', 'markMenu', 'dashFilterMenu', 'tabFilterMenu', 'fabAddMenu'].forEach(id => {
         const menu = document.getElementById(id);
         if(menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) {
             menu.classList.add('hidden');
@@ -610,14 +601,14 @@ function updateFilterUI(context) {
 // ── Utils ──
 function initials(name) { return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() || '?'; }
 function fmtTime(ts) { return !ts ? '' : new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function escHtml(s) { return !s ? '' : s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escHtml(s) { return !s ? '' : s.replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>'); }
 
 // ── Dashboard (Patients) ──
 async function addPatient() {
     const inp = document.getElementById('newPtName');
     const name = inp.value.trim();
     if (!name) return;
-    await db.patients.add({ name, lastModified: Date.now(), sections:{ history:[], investigations:[], labs:[], tasks:[] } });
+    await db.patients.add({ name, lastModified: Date.now(), sections:{ history:[], investigations:[], labs:[], tasks:[], management:[] } });
     closeAddModal();
     loadDashboard();
 }
@@ -657,7 +648,11 @@ function renderPatients(pts) {
     });
 
     if (!filtered.length) {
-        list.innerHTML = `<div class="empty-state"><div class="ei">${pts.length ? '🔍' : '👥'}</div><div class="et">${pts.length ? 'No matches' : 'No patients'}</div></div>`;
+        list.innerHTML = `<div class="empty-state">
+            <div class="ei">${pts.length ? '🔍' : '👥'}</div>
+            <div class="et">${pts.length ? 'No matches found' : 'No patients yet'}</div>
+            <div class="es">${pts.length ? 'Try a different search or filter.' : 'Tap the <b style="color:var(--teal)">+</b> button to add your first patient, or import a JSON file shared with you.'}</div>
+        </div>`;
         return;
     }
 
@@ -782,6 +777,10 @@ async function ctxDeletePatients() {
 // ── Patient Detail & Tabs ──
 async function openPatient(id, targetTab = 'tasks') {
     currentPatient = await db.patients.get(id);
+    // Ensure all sections exist (handles records created before management tab)
+    ['history','investigations','labs','tasks','management'].forEach(s => {
+        if (!currentPatient.sections[s]) currentPatient.sections[s] = [];
+    });
     document.getElementById('dashboard').classList.add('hidden');
     document.getElementById('patientDetail').classList.remove('hidden');
     document.getElementById('backBtn').classList.remove('hidden');
@@ -827,6 +826,55 @@ function renderCurrentTab() {
 
     if(!currentPatient.sections[currentTab] || !Array.isArray(currentPatient.sections[currentTab])) {
         currentPatient.sections[currentTab] = [];
+    }
+
+    // ── Empty state per tab ──
+    const TAB_EMPTY = {
+        tasks: {
+            icon: '✅',
+            title: 'Task List',
+            desc: 'Track pending tasks and follow-up actions for this patient. Tap the <b>+</b> button below to add a note — use the checkbox to mark tasks complete when done.',
+            hints: ['🩺 "Repeat CBC tomorrow morning"', '💊 "Switch to oral antibiotics if afebrile"', '📋 "Consent for procedure"']
+        },
+        history: {
+            icon: '📜',
+            title: 'Patient History',
+            desc: 'Document the full clinical picture — presenting complaint, past medical history, surgical history, medications, allergies, and social/family history.',
+            hints: ['🤒 "CC: Chest pain × 3 days, radiating to left arm"', '💉 "PMH: DM type 2, HTN, CKD stage 3"', '⚠️ "Allergy: Penicillin → anaphylaxis"']
+        },
+        investigations: {
+            icon: '🔍',
+            title: 'Investigations',
+            desc: 'Log ordered or pending investigations — imaging, cultures, biopsies, ECGs, and procedure results. Attach photos of reports directly.',
+            hints: ['🫁 "CT chest ordered — awaiting result"', '❤️ "ECG: sinus tachycardia, no ST changes"', '🦠 "Blood culture × 2 sent — 48h pending"']
+        },
+        labs: {
+            icon: '🧪',
+            title: 'Lab Results',
+            desc: 'Record laboratory values and trends over time — CBC, metabolic panel, coagulation, cultures, ABGs, and more.',
+            hints: ['🩸 "WBC 14.2 | Hgb 9.8 | Plt 210"', '⚗️ "Na 132 | K 4.1 | Cr 1.8 (baseline 1.2)"', '🔬 "PT 18s | INR 1.6 | PTT 42s"']
+        },
+        management: {
+            icon: '💊',
+            title: 'Management Log',
+            desc: 'Record all procedures performed and medications administered. Include drug name, dose, route, and time for a complete medication log.',
+            hints: ['💉 "Ceftriaxone 2g IV OD — started 09:00"', '🔧 "Central line inserted right IJV — confirmed CXR"', '🩸 "1 unit PRBC transfused — post-Hgb: 10.2"']
+        }
+    };
+
+    if (currentPatient.sections[currentTab].length === 0 && !term) {
+        const t = TAB_EMPTY[currentTab];
+        listDiv.innerHTML = `
+            <div class="empty-state" style="padding:30px 20px 40px;">
+                <div class="ei" style="font-size:2.8rem;margin-bottom:10px;">${t.icon}</div>
+                <div class="et" style="font-size:1rem;margin-bottom:8px;">${t.title}</div>
+                <div class="es" style="margin-bottom:18px;line-height:1.6;">${t.desc}</div>
+                <div style="display:flex;flex-direction:column;gap:7px;text-align:left;max-width:280px;margin:0 auto;">
+                    ${t.hints.map(h=>`<div style="background:rgba(18,140,126,0.08);border:1px solid rgba(18,140,126,0.18);border-radius:8px;padding:8px 12px;font-size:.8rem;color:var(--teal-dark);">${h}</div>`).join('')}
+                </div>
+                <div style="margin-top:18px;font-size:.78rem;color:var(--muted);">Tap the text box below to get started ↓</div>
+            </div>`;
+        return;
     }
 
     currentPatient.sections[currentTab].forEach((entry, idx) => {
@@ -1451,6 +1499,55 @@ function stopMic() {
     }
     document.getElementById('inputRow').classList.remove('hidden');
     document.getElementById('recordRow').classList.add('hidden');
+}
+
+// ── FAB Dropdown ──
+function toggleFabMenu(e) {
+    e.stopPropagation();
+    document.getElementById('fabAddMenu').classList.toggle('hidden');
+}
+function closeFabMenu() {
+    document.getElementById('fabAddMenu').classList.add('hidden');
+}
+
+// ── Share Selected Patients ──
+async function shareSelectedPatients() {
+    if (!selectedPts.length) return;
+    const data = await Promise.all(selectedPts.map(id => db.patients.get(id)));
+    const out = await Promise.all(data.map(async p => {
+        const clone = JSON.parse(JSON.stringify(p, (k,v)=>v instanceof Blob?undefined:v));
+        for (const sec in p.sections) {
+            if (!Array.isArray(p.sections[sec])) continue;
+            clone.sections[sec] = await Promise.all(p.sections[sec].map(async e => {
+                const ec = {...e};
+                if (e.images && e.images.length) ec.images = await Promise.all(e.images.map(img => toB64(img)));
+                if (e.audios && e.audios.length) ec.audios = await Promise.all(e.audios.map(aud => toB64(aud)));
+                if (e.image instanceof Blob) ec.image = await toB64(e.image);
+                if (e.audio instanceof Blob) ec.audio = await toB64(e.audio);
+                return ec;
+            }));
+        }
+        return clone;
+    }));
+
+    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+    const fileName = `MedFlow_${selectedPts.length}pt_${new Date().toISOString().split('T')[0]}.json`;
+
+    // Try Android Web Share API with file
+    if (navigator.share && navigator.canShare) {
+        const file = new File([blob], fileName, { type: 'application/json' });
+        if (navigator.canShare({ files: [file] })) {
+            try {
+                await navigator.share({ files: [file], title: 'MedFlow Patients', text: `${selectedPts.length} patient(s) from MedFlow` });
+                return;
+            } catch(err) { if (err.name !== 'AbortError') console.error('Share failed:', err); else return; }
+        }
+    }
+    // Fallback: trigger download
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.click();
 }
 
 // ── Export / Import ──
