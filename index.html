@@ -1028,10 +1028,10 @@ CONTENT RULES:
         })
     });
 
-    let llmRes = await callLLM('llama-3.3-70b-versatile');
+    let llmRes = await callLLM('openai/gpt-oss-120b');
     if (!llmRes.ok) {
         if (llmRes.status === 429) {
-            llmRes = await callLLM('qwen/qwen3-32b');
+            llmRes = await callLLM('llama-3.3-70b-versatile');
         }
         if (!llmRes.ok) throw new Error(`LLM summarization error: ${llmRes.status}`);
     }
