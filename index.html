@@ -365,7 +365,7 @@
 </div>
 
 <!-- Standalone import input (used by FAB dropdown) -->
-<input type="file" id="importFile" class="hidden" accept=".json" onchange="importData(event)">
+<input type="file" id="importFile" class="hidden" accept=".json,.txt" onchange="importData(event)">
 
 <div class="overlay" id="editMsgModal" onclick="outsideClick(event,'editMsgModal',closeEditMsgModal)">
     <div class="modal">
@@ -1612,14 +1612,16 @@ async function shareSelectedPatients() {
     _pendingShareFile = null;
 
     try {
-        // Build full blob with images & audio in the background
+        // Build full blob with images & audio in the background.
+        // Chrome's Web Share API blocks application/json (not in its MIME allowlist),
+        // so we share as text/plain — same content, Chrome accepts it, WhatsApp receives it fine.
         const { blob, fileName } = await buildSelectedPatientsBlob();
-        const file = new File([blob], fileName, { type: 'application/json' });
+        const shareBlob = new Blob([await blob.text()], { type: 'text/plain' });
+        const file = new File([shareBlob], fileName, { type: 'text/plain' });
 
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
             _pendingShareFile = file;
         } else {
-            // File sharing not supported — store null so triggerShare uses text only
             _pendingShareFile = null;
         }
 
