@@ -291,13 +291,7 @@
     </div>
     <div class="ctx-right">
         <button class="ctx-btn" id="dashCtxEditBtn" onclick="openEditPtModal()" title="Edit Name">✏️</button>
-        <div style="position:relative;">
-            <button class="ctx-btn" onclick="togglePopup(event,'exportMenu')" title="Export options">👥</button>
-            <div id="exportMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:46px;right:0;min-width:220px;">
-                <button onclick="downloadSelectedPatients();closeExportMenu()">💾 Save to device</button>
-                <button onclick="shareSelectedPatients();closeExportMenu()">📨 Share (WhatsApp…)</button>
-            </div>
-        </div>
+        <button class="ctx-btn" onclick="prepareExport()" title="Export options">📨</button>
         <button class="ctx-btn del" onclick="ctxDeletePatients()" title="Delete">🗑️</button>
     </div>
 </div>
@@ -335,7 +329,7 @@
 <div id="fabContainer" class="fab-container">
     <div id="fabAddMenu" class="popup-menu hidden" style="bottom:70px;right:0;transform-origin:bottom right;min-width:200px;position:absolute;">
         <button onclick="openAddModal();closeFabMenu()">👤 New Patient</button>
-        <button onclick="document.getElementById('importFile').click();closeFabMenu()">📥 Import JSON</button>
+        <button onclick="document.getElementById('importFile').click();closeFabMenu()">📥 Import Patients</button>
     </div>
     <button class="fab-btn fab-add" onclick="toggleFabMenu(event)" title="Options" id="fabAddBtn">+</button>
 </div>
@@ -365,7 +359,7 @@
 </div>
 
 <!-- Standalone import input (used by FAB dropdown) -->
-<input type="file" id="importFile" class="hidden" accept=".json,.txt" onchange="importData(event)">
+<input type="file" id="importFile" class="hidden" accept=".txt" onchange="importData(event)">
 
 <div class="overlay" id="editMsgModal" onclick="outsideClick(event,'editMsgModal',closeEditMsgModal)">
     <div class="modal">
@@ -390,29 +384,30 @@
     </div>
 </div>
 
-<!-- ── Share Modal ── -->
+<!-- ── Share/Export Modal ── -->
 <div class="overlay" id="shareModal">
     <div class="modal" style="text-align:center;">
         <!-- Loading state -->
         <div id="shareLoading">
             <div style="font-size:2rem;margin-bottom:10px;">⏳</div>
             <div class="modal-title">Preparing patients…</div>
-            <div class="modal-sub" style="margin-bottom:0;">Packing notes, images &amp; audio</div>
+            <div class="modal-sub" style="margin-bottom:0;">Packing notes, images & audio</div>
         </div>
         <!-- Ready state -->
         <div id="shareReady" class="hidden">
             <div style="font-size:2rem;margin-bottom:10px;">✅</div>
-            <div class="modal-title">Ready to share</div>
+            <div class="modal-title">Ready to export</div>
             <div class="modal-sub" id="shareReadySub" style="margin-bottom:20px;"></div>
-            <div class="modal-row">
-                <button class="mbtn sec" onclick="closeShareModal()">Cancel</button>
+            <div class="modal-row" style="margin-bottom:10px;">
+                <button class="mbtn sec" onclick="triggerSaveLocally()">💾 Save Locally</button>
                 <button class="mbtn pri" id="shareNowBtn" onclick="triggerShare()">📨 Share</button>
             </div>
+            <button class="mbtn sec" style="width:100%; background:transparent; border:1px solid var(--border);" onclick="closeShareModal()">Cancel</button>
         </div>
         <!-- Error state -->
         <div id="shareError" class="hidden">
             <div style="font-size:2rem;margin-bottom:10px;">❌</div>
-            <div class="modal-title">Share failed</div>
+            <div class="modal-title">Export failed</div>
             <div class="modal-sub" id="shareErrorMsg" style="margin-bottom:20px;"></div>
             <button class="mbtn sec" style="width:100%;" onclick="closeShareModal()">Close</button>
         </div>
@@ -590,7 +585,7 @@ function togglePopup(e, menuId) {
 }
 
 function closeAllPopups(e) {
-    ['attachMenu', 'fmtMenu', 'markMenu', 'dashFilterMenu', 'tabFilterMenu', 'fabAddMenu', 'exportMenu'].forEach(id => {
+    ['attachMenu', 'fmtMenu', 'markMenu', 'dashFilterMenu', 'tabFilterMenu', 'fabAddMenu'].forEach(id => {
         const menu = document.getElementById(id);
         if(menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) {
             menu.classList.add('hidden');
@@ -815,6 +810,7 @@ async function ctxDeletePatients() {
     if(confirm(`Delete ${selectedPts.length} patient(s)?`)) {
         await Promise.all(selectedPts.map(id => db.patients.delete(id)));
         closeDashContext();
+        loadDashboard(); // Added this line to re-render the list
     }
 }
 
@@ -1555,10 +1551,6 @@ function closeFabMenu() {
 }
 
 // ── Export Menu ──
-function closeExportMenu() {
-    document.getElementById('exportMenu').classList.add('hidden');
-}
-
 async function buildSelectedPatientsBlob() {
     const data = await Promise.all(selectedPts.map(id => db.patients.get(id)));
     const out = await Promise.all(data.map(async p => {
@@ -1576,56 +1568,45 @@ async function buildSelectedPatientsBlob() {
         }
         return clone;
     }));
-    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
-    const fileName = `MedFlow_${selectedPts.length}pt_${new Date().toISOString().split('T')[0]}.json`;
+    const blob = new Blob([JSON.stringify(out)], { type: 'text/plain' });
+    const fileName = `MedFlow_${selectedPts.length}pt_${new Date().toISOString().split('T')[0]}.txt`;
     return { blob, fileName };
 }
 
-async function downloadSelectedPatients() {
-    if (!selectedPts.length) return;
-    const { blob, fileName } = await buildSelectedPatientsBlob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = fileName; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-}
-
 let _pendingShareFile = null;
+let _pendingBlobUrl = null;
+let _pendingFileName = null;
 
 function closeShareModal() {
     document.getElementById('shareModal').classList.remove('open');
     _pendingShareFile = null;
+    if (_pendingBlobUrl) {
+        URL.revokeObjectURL(_pendingBlobUrl);
+        _pendingBlobUrl = null;
+    }
+    _pendingFileName = null;
 }
 
-async function shareSelectedPatients() {
+async function prepareExport() {
     if (!selectedPts.length) return;
-    if (!navigator.share) {
-        alert('Sharing is not supported in this browser. Use "Save to device" instead.');
-        return;
-    }
 
-    // Show loading state immediately
     document.getElementById('shareLoading').classList.remove('hidden');
     document.getElementById('shareReady').classList.add('hidden');
     document.getElementById('shareError').classList.add('hidden');
     document.getElementById('shareModal').classList.add('open');
+    
     _pendingShareFile = null;
+    _pendingBlobUrl = null;
+    _pendingFileName = null;
 
     try {
-        // Build full blob with images & audio in the background.
-        // Chrome's Web Share API blocks application/json (not in its MIME allowlist),
-        // so we share as text/plain — same content, Chrome accepts it, WhatsApp receives it fine.
         const { blob, fileName } = await buildSelectedPatientsBlob();
-        const shareBlob = new Blob([await blob.text()], { type: 'text/plain' });
-        const file = new File([shareBlob], fileName, { type: 'text/plain' });
+        
+        const file = new File([blob], fileName, { type: 'text/plain' });
+        _pendingShareFile = file;
+        _pendingBlobUrl = URL.createObjectURL(blob);
+        _pendingFileName = fileName;
 
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            _pendingShareFile = file;
-        } else {
-            _pendingShareFile = null;
-        }
-
-        // Switch to ready state — user taps the Share button for a fresh gesture
         document.getElementById('shareLoading').classList.add('hidden');
         document.getElementById('shareReadySub').textContent =
             `${selectedPts.length} patient(s) packed with all notes, images & audio.`;
@@ -1638,23 +1619,34 @@ async function shareSelectedPatients() {
     }
 }
 
-// Called by the Share button inside the modal — this IS the user gesture
-async function triggerShare() {
+function triggerSaveLocally() {
+    if (!_pendingBlobUrl) return;
+    const a = document.createElement('a');
+    a.href = _pendingBlobUrl; 
+    a.download = _pendingFileName; 
+    a.click();
+    closeShareModal();
+}
+
+function triggerShare() {
+    if (!navigator.share) {
+        alert('Sharing is not supported in this browser. Use "Save Locally" instead.');
+        return;
+    }
+    
     const count = selectedPts.length;
-    try {
-        if (_pendingShareFile) {
-            await navigator.share({ files: [_pendingShareFile], title: 'MedFlow Patients', text: `${count} patient(s) from MedFlow` });
-        } else {
-            await navigator.share({ title: 'MedFlow Patients', text: `${count} patient(s) from MedFlow` });
-        }
-        closeShareModal();
-    } catch(err) {
-        if (err.name !== 'AbortError') {
+    const shareData = _pendingShareFile && navigator.canShare && navigator.canShare({ files: [_pendingShareFile] })
+        ? { files: [_pendingShareFile], title: 'MedFlow Patients', text: `${count} patient(s) from MedFlow` }
+        : { title: 'MedFlow Patients', text: `${count} patient(s) from MedFlow`, url: window.location.href };
+
+    navigator.share(shareData)
+        .then(() => closeShareModal())
+        .catch(err => {
+            if (err.name === 'AbortError') { closeShareModal(); return; }
             document.getElementById('shareReady').classList.add('hidden');
             document.getElementById('shareErrorMsg').textContent = `${err.name}: ${err.message}`;
             document.getElementById('shareError').classList.remove('hidden');
-        }
-    }
+        });
 }
 
 // ── Export / Import ──
@@ -1675,10 +1667,11 @@ async function exportAll() {
         }
         return clone;
     }));
-    const blob = new Blob([JSON.stringify(out)], { type:'application/json' });
+    const blob = new Blob([JSON.stringify(out)], { type:'text/plain' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `MedFlow_${new Date().toISOString().split('T')[0]}.json`; a.click();
+    a.download = `MedFlow_${new Date().toISOString().split('T')[0]}.txt`; a.click();
 }
+
 async function importData(e) {
     const reader = new FileReader();
     reader.onload = async ev => {
