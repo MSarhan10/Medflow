@@ -390,7 +390,35 @@
     </div>
 </div>
 
-<!-- ── API Key Modal ── -->
+<!-- ── Share Modal ── -->
+<div class="overlay" id="shareModal">
+    <div class="modal" style="text-align:center;">
+        <!-- Loading state -->
+        <div id="shareLoading">
+            <div style="font-size:2rem;margin-bottom:10px;">⏳</div>
+            <div class="modal-title">Preparing patients…</div>
+            <div class="modal-sub" style="margin-bottom:0;">Packing notes, images &amp; audio</div>
+        </div>
+        <!-- Ready state -->
+        <div id="shareReady" class="hidden">
+            <div style="font-size:2rem;margin-bottom:10px;">✅</div>
+            <div class="modal-title">Ready to share</div>
+            <div class="modal-sub" id="shareReadySub" style="margin-bottom:20px;"></div>
+            <div class="modal-row">
+                <button class="mbtn sec" onclick="closeShareModal()">Cancel</button>
+                <button class="mbtn pri" id="shareNowBtn" onclick="triggerShare()">📨 Share</button>
+            </div>
+        </div>
+        <!-- Error state -->
+        <div id="shareError" class="hidden">
+            <div style="font-size:2rem;margin-bottom:10px;">❌</div>
+            <div class="modal-title">Share failed</div>
+            <div class="modal-sub" id="shareErrorMsg" style="margin-bottom:20px;"></div>
+            <button class="mbtn sec" style="width:100%;" onclick="closeShareModal()">Close</button>
+        </div>
+    </div>
+</div>
+
 <div class="overlay" id="keyModal" onclick="outsideClick(event,'keyModal',closeKeyModal)">
     <div class="modal">
         <div class="modal-title">🔑 Groq API Key</div>
@@ -540,6 +568,10 @@ let currentStaging = { images: [], audios: [] };
 let selectedMsgs = []; 
 let selectedPts = [];
 
+// Cache of last-rendered patient list so shareSelectedPatients can build
+// the JSON synchronously — no DB reads before navigator.share() = gesture stays alive
+let cachedPatients = [];
+
 // Filters
 let dashFilters = new Set();
 let tabFilters = new Set();
@@ -627,6 +659,7 @@ async function loadDashboard() {
 }
 
 function renderPatients(pts) {
+    cachedPatients = pts; // keep in sync for synchronous share access
     const term = document.getElementById('globalSearch').value.toLowerCase().trim();
     const list = document.getElementById('patientList');
     list.innerHTML = '';
@@ -1557,37 +1590,68 @@ async function downloadSelectedPatients() {
     setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+let _pendingShareFile = null;
+
+function closeShareModal() {
+    document.getElementById('shareModal').classList.remove('open');
+    _pendingShareFile = null;
+}
+
 async function shareSelectedPatients() {
     if (!selectedPts.length) return;
-
     if (!navigator.share) {
         alert('Sharing is not supported in this browser. Use "Save to device" instead.');
         return;
     }
 
-    // NOTE: We intentionally skip media blobs here (no FileReader / toB64 calls).
-    // FileReader uses old-style callbacks that break the browser's user gesture
-    // activation chain — by the time navigator.share() is called, the gesture
-    // has expired and Android silently refuses to open the share sheet.
-    // The download path (Save to device) keeps full media intact.
-    const data = await Promise.all(selectedPts.map(id => db.patients.get(id)));
-    const out = data.map(p =>
-        JSON.parse(JSON.stringify(p, (k, v) => v instanceof Blob ? undefined : v))
-    );
+    // Show loading state immediately
+    document.getElementById('shareLoading').classList.remove('hidden');
+    document.getElementById('shareReady').classList.add('hidden');
+    document.getElementById('shareError').classList.add('hidden');
+    document.getElementById('shareModal').classList.add('open');
+    _pendingShareFile = null;
 
-    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
-    const fileName = `MedFlow_${selectedPts.length}pt_${new Date().toISOString().split('T')[0]}.json`;
-    const file = new File([blob], fileName, { type: 'application/json' });
-
-    const canShareFile = navigator.canShare && navigator.canShare({ files: [file] });
     try {
-        if (canShareFile) {
-            await navigator.share({ files: [file], title: 'MedFlow Patients', text: `${selectedPts.length} patient(s) from MedFlow` });
+        // Build full blob with images & audio in the background
+        const { blob, fileName } = await buildSelectedPatientsBlob();
+        const file = new File([blob], fileName, { type: 'application/json' });
+
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            _pendingShareFile = file;
         } else {
-            await navigator.share({ title: 'MedFlow Patients', text: `${selectedPts.length} patient(s) from MedFlow` });
+            // File sharing not supported — store null so triggerShare uses text only
+            _pendingShareFile = null;
         }
+
+        // Switch to ready state — user taps the Share button for a fresh gesture
+        document.getElementById('shareLoading').classList.add('hidden');
+        document.getElementById('shareReadySub').textContent =
+            `${selectedPts.length} patient(s) packed with all notes, images & audio.`;
+        document.getElementById('shareReady').classList.remove('hidden');
+
     } catch(err) {
-        if (err.name !== 'AbortError') alert(`Share error: ${err.name} — ${err.message}`);
+        document.getElementById('shareLoading').classList.add('hidden');
+        document.getElementById('shareErrorMsg').textContent = err.message || String(err);
+        document.getElementById('shareError').classList.remove('hidden');
+    }
+}
+
+// Called by the Share button inside the modal — this IS the user gesture
+async function triggerShare() {
+    const count = selectedPts.length;
+    try {
+        if (_pendingShareFile) {
+            await navigator.share({ files: [_pendingShareFile], title: 'MedFlow Patients', text: `${count} patient(s) from MedFlow` });
+        } else {
+            await navigator.share({ title: 'MedFlow Patients', text: `${count} patient(s) from MedFlow` });
+        }
+        closeShareModal();
+    } catch(err) {
+        if (err.name !== 'AbortError') {
+            document.getElementById('shareReady').classList.add('hidden');
+            document.getElementById('shareErrorMsg').textContent = `${err.name}: ${err.message}`;
+            document.getElementById('shareError').classList.remove('hidden');
+        }
     }
 }
 
