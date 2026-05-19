@@ -1,244 +1,90 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sheets & Image Chunking Prototype</title>
-    <!-- Google Identity Services (OAuth) -->
+    <title>Cloud Share App</title>
+    <!-- Load Google APIs -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
     <style>
-        body { font-family: system-ui, sans-serif; background: #f0f2f5; padding: 20px; color: #333; }
-        .card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); max-width: 600px; margin: 0 auto 20px; }
-        h2 { margin-top: 0; color: #128C7E; }
-        input, textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-family: inherit; }
-        button { background: #128C7E; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; margin-bottom: 10px; }
-        button:hover { background: #075E54; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        .row { display: flex; gap: 10px; }
-        .output-box { background: #e8f4f8; padding: 15px; border-radius: 6px; border: 1px solid #bce8f1; margin-top: 10px; word-wrap: break-word; }
-        .output-box img { max-width: 100%; border-radius: 8px; margin-top: 10px; }
-        label { font-size: 0.85rem; font-weight: bold; color: #555; }
-        .step { background: #333; color: white; display: inline-block; width: 24px; height: 24px; text-align: center; border-radius: 50%; line-height: 24px; margin-right: 8px; }
-        .readonly-input { background: #e9ecef; color: #666; cursor: not-allowed; }
+        body { font-family: sans-serif; padding: 20px; }
+        .box { border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
     </style>
 </head>
 <body>
 
-    <div class="card">
-        <h2><span class="step">1</span> Google Setup</h2>
-        <p style="font-size: 0.85rem; color: #666;">Your Client ID is pre-loaded.</p>
-        <input type="text" id="clientId" class="readonly-input" value="585974304646-v0jg28j9vvphg9c86t15jore9qclm2c3.apps.googleusercontent.com" readonly>
-        <button id="loginBtn" onclick="loginWithGoogle()">Sign in with Google (Resident Login)</button>
-        <p id="authStatus" style="color: red; font-size: 0.9rem;">Not authenticated</p>
+    <div class="box">
+        <button id="auth-btn" onclick="handleAuthClick()">Sign In / Connect Drive</button>
     </div>
 
-    <div class="card">
-        <h2><span class="step">2</span> Patient Data Input</h2>
-        <label>Patient Name</label>
-        <input type="text" id="ptName" placeholder="John Doe">
-        
-        <label>History</label>
-        <textarea id="ptHistory" rows="2" placeholder="History text..."></textarea>
-        
-        <label>Labs</label>
-        <textarea id="ptLabs" rows="2" placeholder="Labs text..."></textarea>
-        
-        <label>Management</label>
-        <textarea id="ptManagement" rows="2" placeholder="Management text..."></textarea>
-        
-        <label>Tasks</label>
-        <textarea id="ptTasks" rows="2" placeholder="Tasks text..."></textarea>
-
-        <label>Attach Image (Will be converted to Base64 & Chunked to bypass Google limits)</label>
-        <input type="file" id="ptImage" accept="image/*">
-
-        <button onclick="saveToSheets()" id="saveBtn" disabled>Create Sheet & Save Patient</button>
-        <div id="saveStatus" style="font-size: 0.9rem; color: #128C7E; font-weight: bold;"></div>
+    <div class="box">
+        <h3>Upload Data</h3>
+        <input type="text" id="text-input" placeholder="Enter notes"><br><br>
+        <input type="file" id="file-input"><br><br>
+        <button onclick="processAndUpload()">Compress & Save</button>
+        <p id="status"></p>
     </div>
 
-    <div class="card">
-        <h2><span class="step">3</span> Load From Google Sheets</h2>
-        <label>Spreadsheet ID (Generated after saving above)</label>
-        <div class="row">
-            <input type="text" id="sheetId" placeholder="Paste Sheet ID here...">
-            <button onclick="loadFromSheets()" id="loadBtn" disabled style="width: 150px;">Load Data</button>
-        </div>
-        
-        <div id="loadedData" class="output-box" style="display: none;"></div>
+    <div class="box">
+        <h3>Retrieve Data</h3>
+        <input type="text" id="link-input" placeholder="Paste File ID here">
+        <button onclick="loadFile()">Load Data</button>
+        <div id="output"></div>
     </div>
 
-<script>
-    let accessToken = null;
-    let tokenClient;
+    <script>
+        const CLIENT_ID = '585974304646-v0jg28j9vvphg9c86t15jore9qclm2c3.apps.googleusercontent.com';
+        const SCOPE = 'https://www.googleapis.com/auth/drive.file';
+        let tokenClient;
 
-    // 1. Google Authentication
-    function loginWithGoogle() {
-        const clientId = document.getElementById('clientId').value.trim();
+        // 1. Initialize
+        window.onload = function() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPE,
+                callback: (resp) => { if (resp.access_token) document.getElementById('auth-btn').innerText = "Connected!"; }
+            });
+        };
 
-        tokenClient = google.accounts.oauth2.initTokenClient({
-            client_id: clientId,
-            scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file',
-            callback: (response) => {
-                if (response.error !== undefined) {
-                    console.error(response);
-                    alert("Auth failed. Make sure you are running on http://127.0.0.1 and it is added to Authorized Origins in Google Cloud.");
-                    return;
-                }
-                accessToken = response.access_token;
-                document.getElementById('authStatus').textContent = "✅ Authenticated successfully!";
-                document.getElementById('authStatus').style.color = "green";
-                document.getElementById('saveBtn').disabled = false;
-                document.getElementById('loadBtn').disabled = false;
-            }
-        });
-        tokenClient.requestAccessToken();
-    }
+        function handleAuthClick() { tokenClient.requestAccessToken(); }
 
-    // Helper: Convert Image to Base64
-    function getBase64(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = error => reject(error);
-        });
-    }
-
-    // Helper: Chunk a long string into an array of smaller strings
-    // Google Sheets limits a cell to 50,000 characters. We use 45,000 to be safe.
-    function chunkString(str, length = 45000) {
-        const chunks = [];
-        for (let i = 0; i < str.length; i += length) {
-            chunks.push(str.substring(i, i + length));
-        }
-        return chunks;
-    }
-
-    // 2. Save Data to Sheets
-    async function saveToSheets() {
-        if (!accessToken) return;
-        
-        document.getElementById('saveBtn').disabled = true;
-        document.getElementById('saveStatus').textContent = "Processing image...";
-
-        const name = document.getElementById('ptName').value || "Unknown Patient";
-        let history = document.getElementById('ptHistory').value;
-        const labs = document.getElementById('ptLabs').value;
-        const mgt = document.getElementById('ptManagement').value;
-        const tasks = document.getElementById('ptTasks').value;
-        const fileInput = document.getElementById('ptImage').files[0];
-
-        let imageChunks = [];
-
-        // If there's an image, create a reference in the text and chunk the base64
-        if (fileInput) {
-            const base64Img = await getBase64(fileInput);
-            imageChunks = chunkString(base64Img); // Splits into 45,000 char arrays
+        // 2. Compress and Upload
+        async function processAndUpload() {
+            const file = document.getElementById('file-input').files[0];
+            const text = document.getElementById('text-input').value;
             
-            // We append a placeholder to the History text so we know where to put it when loading
-            history += "\n\n[IMAGE_DATA]"; 
-        }
+            document.getElementById('status').innerText = "Compressing and Uploading...";
 
-        // The row will look like: [Name, History, Labs, Mgt, Tasks, Chunk1, Chunk2, Chunk3...]
-        const rowData = [name, history, labs, mgt, tasks, ...imageChunks];
+            // Combine Data into a Blob (JSON)
+            const data = { text: text, fileName: file.name };
+            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
 
-        try {
-            document.getElementById('saveStatus').textContent = "Creating Google Sheet...";
-            
-            // Create a new Spreadsheet
-            const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+            // Upload via GAPI
+            const metadata = { name: 'my-app-data.json', mimeType: 'application/json' };
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+            form.append('file', blob);
+
+            fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ properties: { title: `Handover - ${name}` } })
+                headers: new Headers({ 'Authorization': 'Bearer ' + gapi.auth.getToken().access_token }),
+                body: form
+            }).then(res => res.json()).then(data => {
+                document.getElementById('status').innerText = "Saved! File ID: " + data.id;
+                alert("Share this ID: " + data.id);
             });
-            const sheet = await createRes.json();
-            const spreadsheetId = sheet.spreadsheetId;
-
-            document.getElementById('saveStatus').textContent = "Writing data (including overflow chunks)...";
-
-            // Write row to the sheet
-            await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:Z1?valueInputOption=USER_ENTERED`, {
-                method: 'PUT',
-                headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ values: [rowData] })
-            });
-
-            document.getElementById('saveStatus').innerHTML = `✅ Saved! Sheet ID populated below. <br> <a href="${sheet.spreadsheetUrl}" target="_blank">Open your Sheet here</a>`;
-            document.getElementById('sheetId').value = spreadsheetId; // Auto-fill for testing
-
-        } catch (err) {
-            console.error(err);
-            document.getElementById('saveStatus').textContent = "❌ Error saving to sheets.";
-            document.getElementById('saveStatus').style.color = "red";
-        } finally {
-            document.getElementById('saveBtn').disabled = false;
         }
-    }
 
-    // 3. Load Data from Sheets
-    async function loadFromSheets() {
-        if (!accessToken) return;
-        
-        const spreadsheetId = document.getElementById('sheetId').value.trim();
-        if (!spreadsheetId) { alert("Please enter the Sheet ID"); return; }
-
-        document.getElementById('loadBtn').disabled = true;
-
-        try {
-            // Read Row 1 (A1 to Z1)
-            const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A1:Z1`, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
+        // 3. Retrieve
+        function loadFile() {
+            const fileId = document.getElementById('link-input').value;
+            fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                headers: { 'Authorization': 'Bearer ' + gapi.auth.getToken().access_token }
+            })
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById('output').innerText = "Loaded: " + JSON.stringify(data);
             });
-            const data = await res.json();
-            
-            if (!data.values || data.values.length === 0) {
-                alert("No data found in sheet.");
-                return;
-            }
-
-            const row = data.values[0]; // The first row array
-
-            // Extract the standard 5 columns
-            const loadedName = row[0] || "";
-            let loadedHistory = row[1] || "";
-            const loadedLabs = row[2] || "";
-            const loadedMgt = row[3] || "";
-            const loadedTasks = row[4] || "";
-
-            // Extract chunks (Column 6 onwards) and stitch them together
-            const chunks = row.slice(5);
-            let reconstructedImageBase64 = "";
-            if (chunks.length > 0) {
-                reconstructedImageBase64 = chunks.join(""); // Re-combine the 45k character pieces
-            }
-
-            // Replace the placeholder reference with the actual image HTML
-            if (loadedHistory.includes("[IMAGE_DATA]") && reconstructedImageBase64) {
-                loadedHistory = loadedHistory.replace(
-                    "[IMAGE_DATA]", 
-                    `<br><img src="${reconstructedImageBase64}" alt="Reconstructed Image">`
-                );
-            }
-
-            // Display
-            const out = document.getElementById('loadedData');
-            out.style.display = "block";
-            out.innerHTML = `
-                <h3>👤 ${loadedName}</h3>
-                <p><b>History:</b> <br> ${loadedHistory}</p>
-                <p><b>Labs:</b> ${loadedLabs}</p>
-                <p><b>Management:</b> ${loadedMgt}</p>
-                <p><b>Tasks:</b> ${loadedTasks}</p>
-            `;
-
-        } catch (err) {
-            console.error(err);
-            alert("Error loading from sheet. Check console.");
-        } finally {
-            document.getElementById('loadBtn').disabled = false;
         }
-    }
-</script>
-
+    </script>
 </body>
 </html>
