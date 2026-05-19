@@ -359,8 +359,6 @@
     </div>
 </div>
 
-
-
 <div class="overlay" id="editMsgModal" onclick="outsideClick(event,'editMsgModal',closeEditMsgModal)">
     <div class="modal">
         <div class="modal-title">Edit Note</div>
@@ -597,7 +595,7 @@ function requestDriveAccess(callback) {
     _ensureDriveClient();
     if (!_driveTokenClient) { alert('Google auth not loaded yet. Please wait a moment.'); return; }
     _driveAuthCallback = callback;
-    // Skip consent screen if previously authorised
+    // We execute requestAccessToken synchronously per Google's gesture policy requirements
     _driveTokenClient.requestAccessToken({ prompt: localStorage.getItem('medflow_drive_authed') ? '' : 'consent' });
 }
 
@@ -752,7 +750,7 @@ function renderPatients(pts) {
         list.innerHTML = `<div class="empty-state">
             <div class="ei">${pts.length ? '🔍' : '👥'}</div>
             <div class="et">${pts.length ? 'No matches found' : 'No patients yet'}</div>
-            <div class="es">${pts.length ? 'Try a different search or filter.' : 'Tap the <b style="color:var(--teal)">+</b> button to add your first patient, or import a JSON file shared with you.'}</div>
+            <div class="es">${pts.length ? 'Try a different search or filter.' : 'Tap the <b style="color:var(--teal)">+</b> button to add your first patient, or import patients shared with you.'}</div>
         </div>`;
         return;
     }
@@ -1617,7 +1615,7 @@ function closeFabMenu() {
     document.getElementById('fabAddMenu').classList.add('hidden');
 }
 
-// ── Export Menu ──
+// ── Export / Share via Drive ──
 async function buildSelectedPatientsBlob() {
     const data = await Promise.all(selectedPts.map(id => db.patients.get(id)));
     const out = await Promise.all(data.map(async p => {
@@ -1641,16 +1639,11 @@ async function buildSelectedPatientsBlob() {
 }
 
 let _pendingShareFile = null;
-let _pendingBlobUrl = null;
 let _pendingFileName = null;
 
 function closeShareModal() {
     document.getElementById('shareModal').classList.remove('open');
     _pendingShareFile = null;
-    if (_pendingBlobUrl) {
-        URL.revokeObjectURL(_pendingBlobUrl);
-        _pendingBlobUrl = null;
-    }
     _pendingFileName = null;
 }
 
@@ -1659,24 +1652,22 @@ async function prepareExport() {
 
     document.getElementById('shareLoading').classList.remove('hidden');
     document.getElementById('shareReady').classList.add('hidden');
+    document.getElementById('shareLinkReady').classList.add('hidden');
     document.getElementById('shareError').classList.add('hidden');
     document.getElementById('shareModal').classList.add('open');
     
     _pendingShareFile = null;
-    _pendingBlobUrl = null;
     _pendingFileName = null;
 
     try {
         const { blob, fileName } = await buildSelectedPatientsBlob();
-        
         const file = new File([blob], fileName, { type: 'text/plain' });
+        
         _pendingShareFile = file;
-        _pendingBlobUrl = URL.createObjectURL(blob);
         _pendingFileName = fileName;
 
         document.getElementById('shareLoading').classList.add('hidden');
-        document.getElementById('shareReadySub').textContent =
-            `${selectedPts.length} patient(s) packed with all notes, images & audio.`;
+        document.getElementById('shareReadySub').textContent = `${selectedPts.length} patient(s) packed with all notes, images & audio.`;
         document.getElementById('shareReady').classList.remove('hidden');
 
     } catch(err) {
@@ -1686,84 +1677,169 @@ async function prepareExport() {
     }
 }
 
-function triggerSaveLocally() {
-    if (!_pendingBlobUrl) return;
-    const a = document.createElement('a');
-    a.href = _pendingBlobUrl; 
-    a.download = _pendingFileName; 
-    a.click();
-    closeShareModal();
+async function uploadToDrive() {
+    requestDriveAccess(async () => {
+        if (!driveToken || !_pendingShareFile) return;
+        
+        const btn = document.getElementById('shareUploadBtn');
+        btn.innerHTML = "⏳ Uploading...";
+        btn.disabled = true;
+
+        try {
+            const fileContent = await _pendingShareFile.text();
+            const metadata = { name: _pendingFileName, mimeType: 'text/plain' };
+            const boundary = 'foo_bar_baz';
+            const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: text/plain\r\n\r\n${fileContent}\r\n--${boundary}--`;
+
+            const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST',
+                headers: { 
+                    'Authorization': 'Bearer ' + driveToken, 
+                    'Content-Type': `multipart/related; boundary=${boundary}` 
+                },
+                body: body
+            });
+
+            if (!res.ok) throw new Error("Upload failed: " + res.status);
+            const result = await res.json();
+            const fileId = result.id;
+
+            // Make the file accessible to anyone with the link
+            await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': 'Bearer ' + driveToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ role: 'reader', type: 'anyone' })
+            });
+
+            const link = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
+            
+            document.getElementById('shareReady').classList.add('hidden');
+            document.getElementById('shareLinkInp').value = link;
+            document.getElementById('shareLinkReady').classList.remove('hidden');
+
+        } catch (err) {
+            document.getElementById('shareReady').classList.add('hidden');
+            document.getElementById('shareErrorMsg').textContent = err.message || String(err);
+            document.getElementById('shareError').classList.remove('hidden');
+        } finally {
+            btn.innerHTML = "☁️ Upload & Get Link";
+            btn.disabled = false;
+        }
+    });
 }
 
-function triggerShare() {
-    if (!navigator.share) {
-        alert('Sharing is not supported in this browser. Use "Save Locally" instead.');
+function copyShareLink() {
+    const link = document.getElementById('shareLinkInp').value;
+    navigator.clipboard.writeText(link).then(() => alert('Link copied!')).catch(e => prompt('Copy manually:', link));
+}
+
+function shareViaWhatsApp() {
+    const link = document.getElementById('shareLinkInp').value;
+    const text = encodeURIComponent(`Here are the MedFlow patients:\n${link}`);
+    window.open(`https://wa.me/?text=${text}`, '_blank');
+}
+
+// ── Download / Import from Drive ──
+function openAddPatientsModal() {
+    document.getElementById('addPatientsModal').classList.add('open');
+    if (localStorage.getItem('medflow_drive_authed')) {
+        document.getElementById('addPtAuthStep').classList.add('hidden');
+        document.getElementById('addPtLinkStep').classList.remove('hidden');
+    } else {
+        document.getElementById('addPtAuthStep').classList.remove('hidden');
+        document.getElementById('addPtLinkStep').classList.add('hidden');
+    }
+}
+
+function closeAddPatientsModal() {
+    document.getElementById('addPatientsModal').classList.remove('open');
+    document.getElementById('importLinkInp').value = '';
+    document.getElementById('addPtStatus').textContent = '';
+}
+
+function signInForImport() {
+    requestDriveAccess(() => {
+        document.getElementById('addPtAuthStep').classList.add('hidden');
+        document.getElementById('addPtLinkStep').classList.remove('hidden');
+    });
+}
+
+function extractFileId(url) {
+    const match = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    if (match) return match[1];
+    const matchId = url.match(/id=([a-zA-Z0-9-_]+)/);
+    if (matchId) return matchId[1];
+    return null;
+}
+
+function importFromLink() {
+    const link = document.getElementById('importLinkInp').value.trim();
+    const fileId = extractFileId(link);
+    
+    if (!fileId) {
+        document.getElementById('addPtStatus').textContent = '❌ Invalid Google Drive link.';
         return;
     }
+
+    document.getElementById('addPtStatus').textContent = '⏳ Downloading...';
     
-    const count = selectedPts.length;
-    const shareData = _pendingShareFile && navigator.canShare && navigator.canShare({ files: [_pendingShareFile] })
-        ? { files: [_pendingShareFile], title: 'MedFlow Patients', text: `${count} patient(s) from MedFlow` }
-        : { title: 'MedFlow Patients', text: `${count} patient(s) from MedFlow`, url: window.location.href };
-
-    navigator.share(shareData)
-        .then(() => closeShareModal())
-        .catch(err => {
-            if (err.name === 'AbortError') { closeShareModal(); return; }
-            document.getElementById('shareReady').classList.add('hidden');
-            document.getElementById('shareErrorMsg').textContent = `${err.name}: ${err.message}`;
-            document.getElementById('shareError').classList.remove('hidden');
-        });
-}
-
-// ── Export / Import ──
-async function exportAll() {
-    const data = await db.patients.toArray();
-    const out = await Promise.all(data.map(async p => {
-        const clone = JSON.parse(JSON.stringify(p, (k,v)=>v instanceof Blob?undefined:v));
-        for (const sec in p.sections) {
-            clone.sections[sec] = await Promise.all(p.sections[sec].map(async e => {
-                const ec = {...e};
-                if (e.images && e.images.length) ec.images = await Promise.all(e.images.map(img => toB64(img)));
-                if (e.audios && e.audios.length) ec.audios = await Promise.all(e.audios.map(aud => toB64(aud)));
-                // Legacy
-                if (e.image instanceof Blob) ec.image = await toB64(e.image);
-                if (e.audio instanceof Blob) ec.audio = await toB64(e.audio);
-                return ec;
-            }));
-        }
-        return clone;
-    }));
-    const blob = new Blob([JSON.stringify(out)], { type:'text/plain' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `MedFlow_${new Date().toISOString().split('T')[0]}.txt`; a.click();
-}
-
-async function importData(e) {
-    const reader = new FileReader();
-    reader.onload = async ev => {
+    requestDriveAccess(async () => {
         try {
-            const imported = JSON.parse(ev.target.result);
+            // Standard API fetch
+            let res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+                headers: { 'Authorization': 'Bearer ' + driveToken }
+            });
+            
+            // Fallback strategy for public files where strict scoping policies block access 
+            if (!res.ok && res.status === 404) {
+                res = await fetch(`https://drive.google.com/uc?export=download&id=${fileId}`);
+            }
+
+            if (!res.ok) throw new Error("Failed to fetch file. Check permissions or link.");
+            
+            const textData = await res.text();
+            const imported = JSON.parse(textData);
+            
+            document.getElementById('addPtStatus').textContent = '⏳ Merging patients...';
+            
             for (const p of imported) {
                 for (const sec in p.sections) {
                     p.sections[sec] = p.sections[sec].map(entry => {
                         if (entry.images && entry.images.length) entry.images = entry.images.map(img => fromB64(img));
                         if (entry.audios && entry.audios.length) entry.audios = entry.audios.map(aud => fromB64(aud));
-                        // Legacy
                         if (entry.image && typeof entry.image === 'string') entry.image = fromB64(entry.image);
                         if (entry.audio && typeof entry.audio === 'string') entry.audio = fromB64(entry.audio);
                         return entry;
                     });
                 }
                 const existing = await db.patients.where('name').equals(p.name).first();
-                if (existing) { p.id = existing.id; await db.patients.put(p); } else { delete p.id; await db.patients.add(p); }
+                if (existing) { 
+                    p.id = existing.id; 
+                    p.lastModified = Date.now(); // bump to top of list
+                    await db.patients.put(p); 
+                } else { 
+                    delete p.id; 
+                    p.lastModified = Date.now();
+                    await db.patients.add(p); 
+                }
             }
-            loadDashboard();
-            alert('Import successful!');
-        } catch { alert('Invalid file format.'); }
-    };
-    if(e.target.files[0]) reader.readAsText(e.target.files[0]);
+            
+            document.getElementById('addPtStatus').textContent = '✅ Success!';
+            setTimeout(() => {
+                closeAddPatientsModal();
+                loadDashboard();
+                closeDashContext();
+            }, 1000);
+            
+        } catch(err) {
+            document.getElementById('addPtStatus').textContent = '❌ ' + (err.message || String(err));
+        }
+    });
 }
+
 const toB64 = b => new Promise(res=>{ const r=new FileReader(); r.onloadend=()=>res(r.result); r.readAsDataURL(b); });
 const fromB64 = d => {
     const [meta, data] = d.split(','); const mime = meta.match(/:(.*?);/)[1];
