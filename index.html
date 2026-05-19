@@ -270,18 +270,53 @@
 <body onclick="closeAllPopups(event)">
 
 <!-- ── Main Header ── -->
-<header id="mainHeader">
-    <div class="hdr-left">
-        <div class="hdr-logo">🏥</div>
-        <div>
-            <h1 class="hdr-title">MedFlow</h1>
-            <div class="hdr-sub">Developed by MSarhan</div>
+<header id="mainHeader" style="padding:0;">
+
+    <!-- Normal state -->
+    <div id="hdrNormal" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;height:57px;">
+        <div class="hdr-left">
+            <div class="hdr-logo">🏥</div>
+            <div>
+                <h1 class="hdr-title">MedFlow</h1>
+                <div class="hdr-sub">Developed by MSarhan</div>
+            </div>
+        </div>
+        <div class="hdr-right">
+            <button id="backBtn" class="back-btn hidden" onclick="showDashboard()">← Back</button>
+            <button class="ctx-btn" id="hdrSearchBtn" onclick="openHeaderSearch()" title="Search" style="color:#fff;font-size:1.1rem;">🔍</button>
+            <div style="position:relative;">
+                <button class="ctx-btn" id="hdrMenuBtn" onclick="togglePopup(event,'hdrMenu')" title="Menu" style="color:#fff;font-size:1.25rem;font-weight:400;">☰</button>
+                <div id="hdrMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:46px;right:0;min-width:180px;">
+                    <button onclick="openKeyModal();closeHdrMenu()">🔑 API Key</button>
+                    <button onclick="openHistoryModal();closeHdrMenu()">📋 Upload History</button>
+                </div>
+            </div>
         </div>
     </div>
-    <div class="hdr-right">
-        <button id="backBtn" class="back-btn hidden" onclick="showDashboard()">← Back</button>
-        <button class="back-btn" onclick="openKeyModal()" title="API Key" id="keyBtn" style="background:rgba(255,255,255,0.15);padding:7px 10px;">🔑</button>
+
+    <!-- Search state (WhatsApp-style full-header takeover) -->
+    <div id="hdrSearch" style="display:none;align-items:center;gap:6px;padding:8px 10px;height:57px;">
+        <button onclick="closeHeaderSearch()" style="background:transparent;border:none;color:#fff;font-size:1.2rem;cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:.15s;flex-shrink:0;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='transparent'">←</button>
+        <input type="text" id="hdrSearchInp" placeholder="Search patients or notes…"
+            oninput="onHeaderSearch(this.value)"
+            style="flex:1;height:36px;padding:0 12px;border:none;border-radius:20px;background:rgba(255,255,255,0.18);color:#fff;font-size:0.92rem;font-family:inherit;outline:none;min-width:0;"
+            onfocus="this.style.background='rgba(255,255,255,0.25)'" onblur="this.style.background='rgba(255,255,255,0.18)'">
+        <div style="position:relative;flex-shrink:0;">
+            <button id="hdrFilterBtn" onclick="togglePopup(event,'hdrFilterMenu')"
+                style="height:34px;padding:0 12px;border-radius:20px;border:1px solid rgba(255,255,255,0.3);background:transparent;color:#fff;font-size:0.82rem;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;transition:.15s;"
+                onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='transparent'">All Notes</button>
+            <div id="hdrFilterMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:calc(100% + 4px);right:0;min-width:170px;">
+                <label class="filter-opt"><input type="checkbox" id="hdrFlt-critical" value="critical" onchange="hdrToggleFilter('critical')"> 🚨 Critical</label>
+                <label class="filter-opt"><input type="checkbox" id="hdrFlt-follow_up" value="follow_up" onchange="hdrToggleFilter('follow_up')"> 🔄 Follow Up</label>
+                <label class="filter-opt"><input type="checkbox" id="hdrFlt-pending" value="pending" onchange="hdrToggleFilter('pending')"> ⏳ Pending</label>
+                <div class="filter-opt" style="justify-content:center;color:var(--danger);border-bottom:none;border-top:1px solid var(--border);" onclick="hdrClearFilters()">Reset</div>
+            </div>
+        </div>
+        <button onclick="clearHeaderSearch()" title="Clear"
+            style="background:transparent;border:none;color:rgba(255,255,255,0.75);font-size:1.2rem;cursor:pointer;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:.15s;flex-shrink:0;"
+            onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(255,255,255,0.75)'">✕</button>
     </div>
+
 </header>
 
 <!-- ── Dashboard Context Header (Patient Selection) ── -->
@@ -421,11 +456,21 @@
     </div>
 </div>
 
+<!-- ── Upload History Modal ── -->
+<div class="overlay" id="historyModal" onclick="outsideClick(event,'historyModal',closeHistoryModal)">
+    <div class="modal" style="max-height:80vh;display:flex;flex-direction:column;">
+        <div class="modal-title">📋 Upload History</div>
+        <div class="modal-sub">Previously shared patient files</div>
+        <div id="historyModalList" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:7px;max-height:340px;margin-bottom:16px;"></div>
+        <button class="mbtn sec" onclick="closeHistoryModal()">Close</button>
+    </div>
+</div>
+
 <div class="overlay" id="keyModal" onclick="outsideClick(event,'keyModal',closeKeyModal)">
     <div class="modal">
         <div class="modal-title">🔑 Groq API Key</div>
         <div class="modal-sub">Your key is saved locally on this device only. Get one free at console.groq.com</div>
-        <input type="password" class="modal-inp" id="keyInp" placeholder="gsk_..." />
+        <input type="text" class="modal-inp" id="keyInp" placeholder="gsk_..." autocomplete="off" spellcheck="false" />
         <div id="keyStatus" style="font-size:0.78rem;margin:-8px 0 12px;color:var(--muted);"></div>
         <div class="modal-row">
             <button class="mbtn sec" onclick="closeKeyModal()">Cancel</button>
@@ -470,21 +515,6 @@
 
     <!-- Dashboard -->
     <div id="dashboard">
-        <div class="search-wrapper">
-            <div class="g-search">
-                <span class="si">🔍</span>
-                <input type="text" id="globalSearch" placeholder="Search patients or notes…" oninput="filterDashboard()">
-            </div>
-            
-            <button class="filter-btn" id="dashFilterBtn" onclick="togglePopup(event, 'dashFilterMenu')">All Notes</button>
-            <!-- Dropdown Filter Dashboard -->
-            <div id="dashFilterMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:calc(100% - 5px); right:14px;">
-                <label class="filter-opt"><input type="checkbox" value="critical" onchange="toggleFilter('dash','critical')"> 🚨 Critical</label>
-                <label class="filter-opt"><input type="checkbox" value="follow_up" onchange="toggleFilter('dash','follow_up')"> 🔄 Follow Up</label>
-                <label class="filter-opt"><input type="checkbox" value="pending" onchange="toggleFilter('dash','pending')"> ⏳ Pending</label>
-                <div class="filter-opt" style="justify-content:center; color:var(--danger); border-bottom:none; border-top:1px solid var(--border);" onclick="clearFilters('dash')">Reset</div>
-            </div>
-        </div>
         <div id="patientList"></div>
     </div>
 
@@ -499,24 +529,6 @@
                     <div class="det-name" id="detName"></div>
                     <div class="det-label">Active patient</div>
                 </div>
-                <button class="ia-btn" id="ptSearchToggleBtn" onclick="togglePtSearch()" title="Search notes" style="font-size:1rem;flex-shrink:0;">🔍</button>
-                <div style="position:relative;flex-shrink:0;">
-                    <button class="filter-btn" id="tabFilterBtn" onclick="togglePopup(event,'tabFilterMenu')" style="height:34px;font-size:0.82rem;padding:0 12px;">All Notes</button>
-                    <div id="tabFilterMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:calc(100% + 4px);right:0;">
-                        <label class="filter-opt"><input type="checkbox" value="critical" onchange="toggleFilter('tab','critical')"> 🚨 Critical</label>
-                        <label class="filter-opt"><input type="checkbox" value="follow_up" onchange="toggleFilter('tab','follow_up')"> 🔄 Follow Up</label>
-                        <label class="filter-opt"><input type="checkbox" value="pending" onchange="toggleFilter('tab','pending')"> ⏳ Pending</label>
-                        <div class="filter-opt" style="justify-content:center;color:var(--danger);border-bottom:none;border-top:1px solid var(--border);" onclick="clearFilters('tab')">Reset</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Floating collapsible search — shown when user taps 🔍 or a global search is active -->
-            <div id="ptSearchBar" style="display:none;align-items:center;gap:8px;padding:7px 14px;background:#fff;border-bottom:1px solid var(--border);">
-                <span style="color:var(--muted);font-size:0.85rem;flex-shrink:0;">🔍</span>
-                <input type="text" id="ptSearchInp" placeholder="Search notes &amp; transcripts…" oninput="onPtSearch(this.value)"
-                    style="flex:1;border:none;outline:none;font-size:0.88rem;font-family:inherit;color:var(--text);background:transparent;">
-                <button onclick="clearPtSearch()" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:0 2px;line-height:1;">✕</button>
             </div>
             
             <div class="tabs-wrap" id="tabsContainer">
@@ -657,7 +669,7 @@ function togglePopup(e, menuId) {
 }
 
 function closeAllPopups(e) {
-    ['attachMenu', 'fmtMenu', 'markMenu', 'dashFilterMenu', 'tabFilterMenu', 'fabAddMenu'].forEach(id => {
+    ['attachMenu', 'fmtMenu', 'markMenu', 'dashFilterMenu', 'tabFilterMenu', 'fabAddMenu', 'hdrMenu', 'hdrFilterMenu'].forEach(id => {
         const menu = document.getElementById(id);
         if(menu && !menu.classList.contains('hidden') && !menu.contains(e.target)) {
             menu.classList.add('hidden');
@@ -665,35 +677,108 @@ function closeAllPopups(e) {
     });
 }
 
-// ── Patient-level Search ──
-function onPtSearch(val) {
-    ptSearchTerm = val;
-    renderCurrentTab();
+// ── Patient-level Search (legacy stubs kept for openPatient compat) ──
+function onPtSearch(val) { ptSearchTerm = val; renderCurrentTab(); }
+function clearPtSearch() { ptSearchTerm = ''; renderCurrentTab(); }
+
+// ── Unified Header Search (WhatsApp-style) ──
+let _headerSearchOpen = false;
+
+function openHeaderSearch() {
+    _headerSearchOpen = true;
+    document.getElementById('hdrNormal').style.display = 'none';
+    document.getElementById('hdrSearch').style.display = 'flex';
+    // Sync filter checkboxes to current active filters
+    syncHdrFilterUI();
+    setTimeout(() => document.getElementById('hdrSearchInp').focus(), 60);
 }
 
-function togglePtSearch() {
-    const bar = document.getElementById('ptSearchBar');
-    const btn = document.getElementById('ptSearchToggleBtn');
-    const isOpen = bar.style.display === 'flex';
-    if (isOpen) {
-        clearPtSearch();
+function closeHeaderSearch() {
+    _headerSearchOpen = false;
+    document.getElementById('hdrSearch').style.display = 'none';
+    document.getElementById('hdrNormal').style.display = 'flex';
+    clearHeaderSearch();
+}
+
+function clearHeaderSearch() {
+    const inp = document.getElementById('hdrSearchInp');
+    if (inp) inp.value = '';
+    // Clear search state for whichever view is active
+    const inPatient = !document.getElementById('patientDetail').classList.contains('hidden');
+    if (inPatient) {
+        ptSearchTerm = '';
+        renderCurrentTab();
     } else {
-        bar.style.display = 'flex';
-        btn.style.background = 'rgba(18,140,126,0.18)';
-        btn.style.borderRadius = '50%';
-        setTimeout(() => document.getElementById('ptSearchInp').focus(), 60);
+        loadDashboard();
     }
 }
 
-function clearPtSearch() {
-    ptSearchTerm = '';
-    const inp = document.getElementById('ptSearchInp');
-    if (inp) inp.value = '';
-    const bar = document.getElementById('ptSearchBar');
-    if (bar) bar.style.display = 'none';
-    const btn = document.getElementById('ptSearchToggleBtn');
-    if (btn) { btn.style.background = ''; btn.style.borderRadius = ''; }
-    renderCurrentTab();
+function onHeaderSearch(val) {
+    const inPatient = !document.getElementById('patientDetail').classList.contains('hidden');
+    if (inPatient) {
+        ptSearchTerm = val;
+        renderCurrentTab();
+    } else {
+        filterDashboard();
+    }
+}
+
+// Context-aware filter helpers — delegate to the right filter set
+function getSearchContext() {
+    return document.getElementById('patientDetail').classList.contains('hidden') ? 'dash' : 'tab';
+}
+
+function hdrToggleFilter(mark) {
+    const ctx = getSearchContext();
+    toggleFilter(ctx, mark);
+    syncHdrFilterUI();
+    // also update the filter button label
+    updateHdrFilterBtn(ctx);
+}
+
+function hdrClearFilters() {
+    const ctx = getSearchContext();
+    clearFilters(ctx);
+    syncHdrFilterUI();
+    updateHdrFilterBtn(ctx);
+}
+
+function syncHdrFilterUI() {
+    const ctx = getSearchContext();
+    const activeSet = ctx === 'dash' ? dashFilters : tabFilters;
+    ['critical','follow_up','pending'].forEach(m => {
+        const cb = document.getElementById(`hdrFlt-${m}`);
+        if (cb) cb.checked = activeSet.has(m);
+    });
+    updateHdrFilterBtn(ctx);
+}
+
+function updateHdrFilterBtn(ctx) {
+    const activeSet = ctx === 'dash' ? dashFilters : tabFilters;
+    const btn = document.getElementById('hdrFilterBtn');
+    if (!btn) return;
+    if (activeSet.size > 0) {
+        btn.textContent = 'Filtered';
+        btn.style.background = 'rgba(255,255,255,0.25)';
+        btn.style.borderColor = '#fff';
+    } else {
+        btn.textContent = 'All Notes';
+        btn.style.background = 'transparent';
+        btn.style.borderColor = 'rgba(255,255,255,0.3)';
+    }
+}
+
+function closeHdrMenu() {
+    document.getElementById('hdrMenu').classList.add('hidden');
+}
+
+// ── History Modal ──
+function openHistoryModal() {
+    renderUploadHistory('historyModalList');
+    document.getElementById('historyModal').classList.add('open');
+}
+function closeHistoryModal() {
+    document.getElementById('historyModal').classList.remove('open');
 }
 
 // ── Filter Logic ──
@@ -770,7 +855,8 @@ async function loadDashboard() {
 
 function renderPatients(pts) {
     cachedPatients = pts; // keep in sync for synchronous share access
-    const term = document.getElementById('globalSearch').value.toLowerCase().trim();
+    const inp = document.getElementById('hdrSearchInp');
+    const term = (inp ? inp.value : '').toLowerCase().trim();
     const list = document.getElementById('patientList');
     list.innerHTML = '';
 
@@ -941,24 +1027,17 @@ async function openPatient(id, targetTab = 'tasks') {
     document.getElementById('backBtn').classList.remove('hidden');
     document.getElementById('fabContainer').classList.add('hidden');
     
-    document.getElementById('ptSearchInp').value = ''; 
+    // Update search placeholder for patient context
+    const hdrInp = document.getElementById('hdrSearchInp');
+    if (hdrInp) hdrInp.placeholder = 'Search notes & transcripts…';
+
     tabFilters.clear();
     updateFilterUI('tab');
+    if (_headerSearchOpen) syncHdrFilterUI();
 
-    // Carry global search term into patient view
-    const globalTerm = document.getElementById('globalSearch').value.trim();
+    // Carry header search term into patient view
+    const globalTerm = (hdrInp ? hdrInp.value : '').trim();
     ptSearchTerm = globalTerm;
-    const searchBar = document.getElementById('ptSearchBar');
-    const searchToggleBtn = document.getElementById('ptSearchToggleBtn');
-    if (globalTerm) {
-        document.getElementById('ptSearchInp').value = globalTerm;
-        searchBar.style.display = 'flex';
-        searchToggleBtn.style.background = 'rgba(18,140,126,0.18)';
-        searchToggleBtn.style.borderRadius = '50%';
-    } else {
-        searchBar.style.display = 'none';
-        searchToggleBtn.style.background = '';
-    }
 
     document.getElementById('detAvatar').textContent = initials(currentPatient.name);
     document.getElementById('detName').textContent = currentPatient.name;
@@ -975,6 +1054,11 @@ function showDashboard() {
     document.getElementById('patientDetail').classList.add('hidden');
     document.getElementById('backBtn').classList.add('hidden');
     document.getElementById('fabContainer').classList.remove('hidden');
+    // Restore dashboard search placeholder and re-sync filters
+    const hdrInp = document.getElementById('hdrSearchInp');
+    if (hdrInp) hdrInp.placeholder = 'Search patients or notes…';
+    ptSearchTerm = '';
+    if (_headerSearchOpen) syncHdrFilterUI();
     loadDashboard();
 }
 
@@ -1844,7 +1928,7 @@ function openAddPatientsModal() {
     if (localStorage.getItem('medflow_drive_authed')) {
         document.getElementById('addPtAuthStep').classList.add('hidden');
         document.getElementById('addPtLinkStep').classList.remove('hidden');
-        renderUploadHistory();
+        renderUploadHistory('uploadHistoryList');
     } else {
         document.getElementById('addPtAuthStep').classList.remove('hidden');
         document.getElementById('addPtLinkStep').classList.add('hidden');
@@ -1861,7 +1945,7 @@ function signInForImport() {
     requestDriveAccess(() => {
         document.getElementById('addPtAuthStep').classList.add('hidden');
         document.getElementById('addPtLinkStep').classList.remove('hidden');
-        renderUploadHistory();
+        renderUploadHistory('uploadHistoryList');
     });
 }
 
@@ -1963,15 +2047,11 @@ function saveKey() {
     updateKeyBtnState();
     closeKeyModal();
 }
-function updateKeyBtnState() {
-    const btn = document.getElementById('keyBtn');
-    btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
-    btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
-}
+function updateKeyBtnState() { /* keyBtn removed — key status shown inside modal */ }
 
 // ── Upload History ──
-function renderUploadHistory() {
-    const list = document.getElementById('uploadHistoryList');
+function renderUploadHistory(containerId) {
+    const list = document.getElementById(containerId || 'uploadHistoryList');
     if (!list) return;
     let hist = [];
     try { hist = JSON.parse(localStorage.getItem('medflow_upload_history') || '[]'); } catch(e) {}
@@ -1979,6 +2059,7 @@ function renderUploadHistory() {
         list.innerHTML = '<div style="font-size:0.78rem;color:var(--muted);padding:4px 2px;">No uploads yet — links you create will appear here.</div>';
         return;
     }
+    const prefix = containerId || 'uploadHistoryList';
     list.innerHTML = hist.map((item, i) => {
         const d = new Date(item.date);
         const dateStr = d.toLocaleDateString([], {month:'short', day:'numeric', year:'numeric'});
@@ -1989,19 +2070,20 @@ function renderUploadHistory() {
                 <div style="font-size:0.78rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(pts)}">${escHtml(pts)}</div>
                 <div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">${dateStr} · ${timeStr}</div>
             </div>
-            <button id="histBtn-${i}" onclick="copyHistoryLink(${i})" title="Copy link"
+            <button id="${prefix}-histBtn-${i}" onclick="copyHistoryLink(${i}, '${prefix}')" title="Copy link"
                 style="background:transparent;border:none;cursor:pointer;font-size:1rem;color:var(--teal);padding:4px 6px;flex-shrink:0;border-radius:6px;transition:.15s;"
                 onmouseenter="this.style.background='rgba(18,140,126,0.1)'" onmouseleave="this.style.background='transparent'">📋</button>
         </div>`;
     }).join('');
 }
 
-function copyHistoryLink(index) {
+function copyHistoryLink(index, prefix) {
     let hist = [];
     try { hist = JSON.parse(localStorage.getItem('medflow_upload_history') || '[]'); } catch(e) {}
     const item = hist[index];
     if (!item || !item.link) return;
-    const btn = document.getElementById(`histBtn-${index}`);
+    const p = prefix || 'uploadHistoryList';
+    const btn = document.getElementById(`${p}-histBtn-${index}`);
     const copy = () => { if (btn) { btn.textContent = '✓'; btn.style.color = 'var(--teal-light)'; setTimeout(() => { btn.textContent = '📋'; btn.style.color = 'var(--teal)'; }, 1600); } };
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(item.link).then(copy).catch(() => fallbackCopy(item.link, copy));
