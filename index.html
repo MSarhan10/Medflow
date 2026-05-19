@@ -456,6 +456,11 @@
                 <button class="mbtn sec" onclick="closeAddPatientsModal()">Cancel</button>
                 <button class="mbtn pri" onclick="importFromLink()">Download & Merge</button>
             </div>
+            <!-- Upload History -->
+            <div id="uploadHistorySection" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:0.3px;">📋 UPLOAD HISTORY</div>
+                <div id="uploadHistoryList" style="display:flex;flex-direction:column;gap:6px;max-height:170px;overflow-y:auto;"></div>
+            </div>
         </div>
     </div>
 </div>
@@ -490,27 +495,28 @@
         <div class="pd-top">
             <div class="det-hdr">
                 <div class="det-avatar" id="detAvatar"></div>
-                <div>
+                <div style="flex:1;min-width:0;">
                     <div class="det-name" id="detName"></div>
                     <div class="det-label">Active patient</div>
                 </div>
+                <button class="ia-btn" id="ptSearchToggleBtn" onclick="togglePtSearch()" title="Search notes" style="font-size:1rem;flex-shrink:0;">🔍</button>
+                <div style="position:relative;flex-shrink:0;">
+                    <button class="filter-btn" id="tabFilterBtn" onclick="togglePopup(event,'tabFilterMenu')" style="height:34px;font-size:0.82rem;padding:0 12px;">All Notes</button>
+                    <div id="tabFilterMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:calc(100% + 4px);right:0;">
+                        <label class="filter-opt"><input type="checkbox" value="critical" onchange="toggleFilter('tab','critical')"> 🚨 Critical</label>
+                        <label class="filter-opt"><input type="checkbox" value="follow_up" onchange="toggleFilter('tab','follow_up')"> 🔄 Follow Up</label>
+                        <label class="filter-opt"><input type="checkbox" value="pending" onchange="toggleFilter('tab','pending')"> ⏳ Pending</label>
+                        <div class="filter-opt" style="justify-content:center;color:var(--danger);border-bottom:none;border-top:1px solid var(--border);" onclick="clearFilters('tab')">Reset</div>
+                    </div>
+                </div>
             </div>
-            
-            <!-- Exact same structure for the search/filter area -->
-            <div class="search-wrapper" style="padding: 12px 16px;">
-                <div class="g-search">
-                    <span class="si">🔍</span>
-                    <input type="text" id="ptSearchInp" placeholder="Search in current tab..." oninput="renderCurrentTab()">
-                </div>
-                
-                <button class="filter-btn" id="tabFilterBtn" onclick="togglePopup(event, 'tabFilterMenu')">All Notes</button>
-                <!-- Dropdown Filter Tab -->
-                <div id="tabFilterMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:calc(100% - 5px); right:16px;">
-                    <label class="filter-opt"><input type="checkbox" value="critical" onchange="toggleFilter('tab','critical')"> 🚨 Critical</label>
-                    <label class="filter-opt"><input type="checkbox" value="follow_up" onchange="toggleFilter('tab','follow_up')"> 🔄 Follow Up</label>
-                    <label class="filter-opt"><input type="checkbox" value="pending" onchange="toggleFilter('tab','pending')"> ⏳ Pending</label>
-                    <div class="filter-opt" style="justify-content:center; color:var(--danger); border-bottom:none; border-top:1px solid var(--border);" onclick="clearFilters('tab')">Reset</div>
-                </div>
+
+            <!-- Floating collapsible search — shown when user taps 🔍 or a global search is active -->
+            <div id="ptSearchBar" style="display:none;align-items:center;gap:8px;padding:7px 14px;background:#fff;border-bottom:1px solid var(--border);">
+                <span style="color:var(--muted);font-size:0.85rem;flex-shrink:0;">🔍</span>
+                <input type="text" id="ptSearchInp" placeholder="Search notes &amp; transcripts…" oninput="onPtSearch(this.value)"
+                    style="flex:1;border:none;outline:none;font-size:0.88rem;font-family:inherit;color:var(--text);background:transparent;">
+                <button onclick="clearPtSearch()" style="background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;padding:0 2px;line-height:1;">✕</button>
             </div>
             
             <div class="tabs-wrap" id="tabsContainer">
@@ -601,6 +607,7 @@ function requestDriveAccess(callback) {
 
 let currentPatient = null;
 let currentTab = 'tasks';
+let ptSearchTerm = '';
 
 // Media Globals
 let recorder = null;
@@ -658,6 +665,37 @@ function closeAllPopups(e) {
     });
 }
 
+// ── Patient-level Search ──
+function onPtSearch(val) {
+    ptSearchTerm = val;
+    renderCurrentTab();
+}
+
+function togglePtSearch() {
+    const bar = document.getElementById('ptSearchBar');
+    const btn = document.getElementById('ptSearchToggleBtn');
+    const isOpen = bar.style.display === 'flex';
+    if (isOpen) {
+        clearPtSearch();
+    } else {
+        bar.style.display = 'flex';
+        btn.style.background = 'rgba(18,140,126,0.18)';
+        btn.style.borderRadius = '50%';
+        setTimeout(() => document.getElementById('ptSearchInp').focus(), 60);
+    }
+}
+
+function clearPtSearch() {
+    ptSearchTerm = '';
+    const inp = document.getElementById('ptSearchInp');
+    if (inp) inp.value = '';
+    const bar = document.getElementById('ptSearchBar');
+    if (bar) bar.style.display = 'none';
+    const btn = document.getElementById('ptSearchToggleBtn');
+    if (btn) { btn.style.background = ''; btn.style.borderRadius = ''; }
+    renderCurrentTab();
+}
+
 // ── Filter Logic ──
 function toggleFilter(context, mark) {
     const set = context === 'dash' ? dashFilters : tabFilters;
@@ -699,7 +737,19 @@ function updateFilterUI(context) {
 // ── Utils ──
 function initials(name) { return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() || '?'; }
 function fmtTime(ts) { return !ts ? '' : new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
-function escHtml(s) { return !s ? '' : s.replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>'); }
+function fmtDateLabel(ts) {
+    if (!ts) return null;
+    const d = new Date(ts);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today); yesterday.setDate(yesterday.getDate()-1);
+    const msgDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    if (msgDay.getTime() === today.getTime()) return 'Today';
+    if (msgDay.getTime() === yesterday.getTime()) return 'Yesterday';
+    const sameYear = d.getFullYear() === now.getFullYear();
+    return d.toLocaleDateString([], { weekday:'short', month:'short', day:'numeric', ...(sameYear ? {} : {year:'numeric'}) });
+}
+function escHtml(s) { return !s ? '' : s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 // ── Dashboard (Patients) ──
 async function addPatient() {
@@ -895,6 +945,21 @@ async function openPatient(id, targetTab = 'tasks') {
     tabFilters.clear();
     updateFilterUI('tab');
 
+    // Carry global search term into patient view
+    const globalTerm = document.getElementById('globalSearch').value.trim();
+    ptSearchTerm = globalTerm;
+    const searchBar = document.getElementById('ptSearchBar');
+    const searchToggleBtn = document.getElementById('ptSearchToggleBtn');
+    if (globalTerm) {
+        document.getElementById('ptSearchInp').value = globalTerm;
+        searchBar.style.display = 'flex';
+        searchToggleBtn.style.background = 'rgba(18,140,126,0.18)';
+        searchToggleBtn.style.borderRadius = '50%';
+    } else {
+        searchBar.style.display = 'none';
+        searchToggleBtn.style.background = '';
+    }
+
     document.getElementById('detAvatar').textContent = initials(currentPatient.name);
     document.getElementById('detName').textContent = currentPatient.name;
     
@@ -926,7 +991,7 @@ function switchTab(tabId) {
 function renderCurrentTab() {
     const listDiv = document.getElementById('messageList');
     listDiv.innerHTML = '';
-    const term = document.getElementById('ptSearchInp').value.toLowerCase().trim();
+    const term = ptSearchTerm.toLowerCase().trim();
     const isTask = SECTIONS[currentTab].isTask;
 
     if(!currentPatient.sections[currentTab] || !Array.isArray(currentPatient.sections[currentTab])) {
@@ -982,13 +1047,34 @@ function renderCurrentTab() {
         return;
     }
 
+    let lastDateLabel = null;
     currentPatient.sections[currentTab].forEach((entry, idx) => {
         let hasText = !!entry.text;
         
         let matchT = !term || (hasText && entry.text.toLowerCase().includes(term));
+        // Also search through transcripts and OCR text
+        if (!matchT && term) {
+            const transcriptBlob = [
+                ...(entry.transcriptions || []),
+                entry.legacyTranscription || '',
+                ...(entry.imageOcr || []),
+                entry.legacyImageOcr || ''
+            ].filter(Boolean);
+            matchT = transcriptBlob.some(t => t.toLowerCase().includes(term));
+        }
         let matchM = (tabFilters.size === 0) || tabFilters.has(entry.mark);
 
         if (!matchT || !matchM) return;
+
+        // ── Date separator (WhatsApp-style) ──
+        const dateLabel = entry.timestamp ? fmtDateLabel(entry.timestamp) : null;
+        if (dateLabel && dateLabel !== lastDateLabel) {
+            lastDateLabel = dateLabel;
+            const sep = document.createElement('div');
+            sep.style.cssText = 'display:flex;align-items:center;justify-content:center;margin:10px 0 4px;';
+            sep.innerHTML = `<span style="background:rgba(200,220,215,0.85);border-radius:10px;padding:3px 13px;font-size:0.7rem;color:#4a6560;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08);letter-spacing:0.2px;">${dateLabel}</span>`;
+            listDiv.appendChild(sep);
+        }
 
         const isSel = selectedMsgs.includes(idx);
         const row = document.createElement('div');
@@ -1151,19 +1237,20 @@ async function processTranscription(audioBlob) {
     const rawTranscript = whisperData.text || '';
     if (!rawTranscript.trim()) return '';
 
-    // ── Step 2: LLM Semantic Summarization ──
-    const SYSTEM_PROMPT = `You are a medical scribe for Egyptian Arabic clinical speech mixed with English terms.
+// ── Step 2: LLM Semantic Summarization ──
+    const SYSTEM_PROMPT = `You are an expert clinical scribe specializing in Egyptian Arabic medical handovers mixed with English terminology.
 
-OUTPUT FORMAT — non-negotiable:
-- Bullet list ONLY. Start your response with "•" immediately. No intro, no prose, no transcript.
-- Each bullet = one distinct clinical fact or action item, written in Arabic.
-- Keep English medical terms exactly as spoken: drug names, investigations, vitals, units (e.g. CXR, ECG, CBC, IV, mg, mmHg).
+Strict Rules for Content Extraction:
+1. SMART SELF-CORRECTION (CRITICAL):
+   - Actively identify changes of mind, slips of the tongue, and corrections (using cues like "لا قصدي", "بلاش", "تعديل", "أو بالأصح", "خلاص لأ", "رجعنا في كلامنا").
+   - Extract ONLY the final clinical intent.
+   - ABSOLUTELY ELIMINATE the retracted/cancelled item. Do not list it, and do not write negations (e.g., do NOT write "عدم إجراء CT chest" or "إلغاء CT"). The corrected item must disappear completely from your output.
+   - Example: "العيان هيعمل ct chest لا قصدي xray chest" must ONLY result in: "• إجراء X-ray chest."
 
-CONTENT RULES:
-- Capture FINAL intent only. If the speaker self-corrects (e.g. "CT chest — no wait, X-ray chest"), record only "X-ray chest".
-- Drop filler words, false starts, and repetitions entirely.
-- Infer meaning from context when pronunciation is unclear.
-- Never copy the raw transcript. Never add timestamps or speaker labels.`;
+2. CONCISENESS & FORMAT:
+   - Output a bulleted list ONLY. Start immediately with "•". No introductory text, no explanations, no conversational prose.
+   - Write in professional medical Arabic. Keep English clinical terms, acronyms, and dosages exactly as spoken (e.g., CT chest, CXR, ECG, CBC, IV, Ceftriaxone, mg).
+   - Ignore all conversational fillers, repetitions, and non-clinical details.`;
 
     const userMessage = `لخّص هذا التفريغ الطبي في نقاط موجزة فقط — لا تنسخه:\n\n${rawTranscript}`;
 
@@ -1716,6 +1803,15 @@ async function uploadToDrive() {
 
             const link = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
             
+            // Save to local upload history
+            try {
+                const ptData = await Promise.all(selectedPts.map(id => db.patients.get(id)));
+                const hist = JSON.parse(localStorage.getItem('medflow_upload_history') || '[]');
+                hist.unshift({ date: Date.now(), fileName: _pendingFileName, patients: ptData.map(p => p.name), link });
+                if (hist.length > 30) hist.length = 30;
+                localStorage.setItem('medflow_upload_history', JSON.stringify(hist));
+            } catch(e) {}
+
             document.getElementById('shareReady').classList.add('hidden');
             document.getElementById('shareLinkInp').value = link;
             document.getElementById('shareLinkReady').classList.remove('hidden');
@@ -1748,6 +1844,7 @@ function openAddPatientsModal() {
     if (localStorage.getItem('medflow_drive_authed')) {
         document.getElementById('addPtAuthStep').classList.add('hidden');
         document.getElementById('addPtLinkStep').classList.remove('hidden');
+        renderUploadHistory();
     } else {
         document.getElementById('addPtAuthStep').classList.remove('hidden');
         document.getElementById('addPtLinkStep').classList.add('hidden');
@@ -1764,6 +1861,7 @@ function signInForImport() {
     requestDriveAccess(() => {
         document.getElementById('addPtAuthStep').classList.add('hidden');
         document.getElementById('addPtLinkStep').classList.remove('hidden');
+        renderUploadHistory();
     });
 }
 
@@ -1869,6 +1967,45 @@ function updateKeyBtnState() {
     const btn = document.getElementById('keyBtn');
     btn.textContent = localStorage.getItem('groq_api_key') ? '🔑' : '🔑';
     btn.style.background = localStorage.getItem('groq_api_key') ? 'rgba(37,211,102,0.25)' : 'rgba(255,100,100,0.25)';
+}
+
+// ── Upload History ──
+function renderUploadHistory() {
+    const list = document.getElementById('uploadHistoryList');
+    if (!list) return;
+    let hist = [];
+    try { hist = JSON.parse(localStorage.getItem('medflow_upload_history') || '[]'); } catch(e) {}
+    if (!hist.length) {
+        list.innerHTML = '<div style="font-size:0.78rem;color:var(--muted);padding:4px 2px;">No uploads yet — links you create will appear here.</div>';
+        return;
+    }
+    list.innerHTML = hist.map((item, i) => {
+        const d = new Date(item.date);
+        const dateStr = d.toLocaleDateString([], {month:'short', day:'numeric', year:'numeric'});
+        const timeStr = d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        const pts = (item.patients || []).join(', ') || 'Unknown patients';
+        return `<div style="background:var(--input-bg);border-radius:8px;padding:8px 10px;display:flex;align-items:center;gap:8px;border:1px solid var(--border);">
+            <div style="flex:1;min-width:0;">
+                <div style="font-size:0.78rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(pts)}">${escHtml(pts)}</div>
+                <div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">${dateStr} · ${timeStr}</div>
+            </div>
+            <button id="histBtn-${i}" onclick="copyHistoryLink(${i})" title="Copy link"
+                style="background:transparent;border:none;cursor:pointer;font-size:1rem;color:var(--teal);padding:4px 6px;flex-shrink:0;border-radius:6px;transition:.15s;"
+                onmouseenter="this.style.background='rgba(18,140,126,0.1)'" onmouseleave="this.style.background='transparent'">📋</button>
+        </div>`;
+    }).join('');
+}
+
+function copyHistoryLink(index) {
+    let hist = [];
+    try { hist = JSON.parse(localStorage.getItem('medflow_upload_history') || '[]'); } catch(e) {}
+    const item = hist[index];
+    if (!item || !item.link) return;
+    const btn = document.getElementById(`histBtn-${index}`);
+    const copy = () => { if (btn) { btn.textContent = '✓'; btn.style.color = 'var(--teal-light)'; setTimeout(() => { btn.textContent = '📋'; btn.style.color = 'var(--teal)'; }, 1600); } };
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(item.link).then(copy).catch(() => fallbackCopy(item.link, copy));
+    } else { fallbackCopy(item.link, copy); }
 }
 
 loadDashboard();
