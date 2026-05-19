@@ -87,17 +87,9 @@
         .g-search input:focus{background:#fff; box-shadow:0 0 0 2px rgba(18,140,126,0.35);}
         .g-search input::placeholder{color:var(--muted);}
         .g-search .si{ position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:0.85rem; pointer-events:none; }
-        
-        .filter-btn {
-            height: 38px; padding: 0 16px; border-radius: 20px; border: 1px solid var(--border);
-            background: #fff; color: var(--muted); font-size: 0.85rem; font-weight: 600;
-            display: flex; align-items: center; justify-content: center; cursor: pointer; transition: 0.2s; 
-            white-space: nowrap; box-shadow: var(--shadow-sm); flex-shrink: 0; font-family: inherit;
-        }
-        .filter-btn.active-filter { background: var(--teal); color: #fff; border-color: var(--teal); }
 
         /* ── Patient List ── */
-        #patientList { flex: 1; overflow-y: auto; padding: 0 14px 100px 14px; }
+        #patientList { flex: 1; overflow-y: auto; padding: 14px 14px 100px 14px; }
         
         /* ── Floating Action Buttons ── */
         .fab-container { position: absolute; bottom: 24px; right: 24px; z-index: 200; display: flex; gap: 14px; align-items: center; }
@@ -163,6 +155,7 @@
             animation: popUp 0.15s ease; border: 1px solid var(--border); min-width: 160px;
         }
         @keyframes popUp { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        
         .popup-menu button, .filter-opt {
             padding: 12px 20px; border: none; background: transparent; font-size: 0.95rem;
             display: flex; align-items: center; gap: 12px; cursor: pointer; text-align: left;
@@ -171,7 +164,11 @@
         }
         .popup-menu button:last-child { border-bottom: none; }
         .popup-menu button:hover, .filter-opt:hover { background: var(--input-bg); }
-        .filter-opt input { cursor: pointer; accent-color: var(--teal); transform: scale(1.15); margin-right: 4px; }
+
+        /* Filter menu active states */
+        .filter-opt.active-critical { background: #fee2e2 !important; color: #b91c1c !important; font-weight: 600; }
+        .filter-opt.active-follow_up { background: #ffedd5 !important; color: #c2410c !important; font-weight: 600; }
+        .filter-opt.active-pending { background: #e0f2fe !important; color: #0369a1 !important; font-weight: 600; }
 
         /* ── Patient Detail Header ── */
         .pd-top { flex-shrink: 0; background: #fff; border-bottom: 1px solid var(--border); }
@@ -273,16 +270,18 @@
 <header id="mainHeader" style="padding:0;">
 
     <!-- Normal state -->
-    <div id="hdrNormal" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;height:57px;">
+    <div id="hdrNormal" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;height:57px;width:100%;">
         <div class="hdr-left">
-            <div class="hdr-logo">🏥</div>
-            <div>
-                <h1 class="hdr-title">MedFlow</h1>
-                <div class="hdr-sub">Developed by MSarhan</div>
-            </div>
+    <button id="backBtn" class="back-btn hidden" onclick="showDashboard()" style="margin-right:4px;">← Back</button>
+    <div id="hdrBrand" style="display:flex;align-items:center;gap:10px;">
+        <div class="hdr-logo">🏥</div>
+        <div>
+            <h1 class="hdr-title">MedFlow</h1>
+            <div class="hdr-sub">Developed by MSarhan</div>
         </div>
+    </div>
+</div>
         <div class="hdr-right">
-            <button id="backBtn" class="back-btn hidden" onclick="showDashboard()">← Back</button>
             <button class="ctx-btn" id="hdrSearchBtn" onclick="openHeaderSearch()" title="Search" style="color:#fff;font-size:1.1rem;">🔍</button>
             <div style="position:relative;">
                 <button class="ctx-btn" id="hdrMenuBtn" onclick="togglePopup(event,'hdrMenu')" title="Menu" style="color:#fff;font-size:1.25rem;font-weight:400;">☰</button>
@@ -295,8 +294,8 @@
     </div>
 
     <!-- Search state (WhatsApp-style full-header takeover) -->
-    <div id="hdrSearch" style="display:none;align-items:center;gap:6px;padding:8px 10px;height:57px;">
-        <button onclick="closeHeaderSearch()" style="background:transparent;border:none;color:#fff;font-size:1.2rem;cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:.15s;flex-shrink:0;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='transparent'">←</button>
+    <div id="hdrSearch" style="display:none;align-items:center;gap:6px;padding:8px 10px;height:57px;width:100%;">
+        <button id="hdrSearchBackBtn" onclick="handleSearchBackClick()" style="background:transparent;border:none;color:#fff;font-size:1.2rem;cursor:pointer;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:.15s;flex-shrink:0;" onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='transparent'">←</button>
         <input type="text" id="hdrSearchInp" placeholder="Search patients or notes…"
             oninput="onHeaderSearch(this.value)"
             style="flex:1;height:36px;padding:0 12px;border:none;border-radius:20px;background:rgba(255,255,255,0.18);color:#fff;font-size:0.92rem;font-family:inherit;outline:none;min-width:0;"
@@ -306,13 +305,13 @@
                 style="height:34px;padding:0 12px;border-radius:20px;border:1px solid rgba(255,255,255,0.3);background:transparent;color:#fff;font-size:0.82rem;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap;transition:.15s;"
                 onmouseover="this.style.background='rgba(255,255,255,0.15)'" onmouseout="this.style.background='transparent'">All Notes</button>
             <div id="hdrFilterMenu" class="popup-menu hidden" onclick="event.stopPropagation()" style="top:calc(100% + 4px);right:0;min-width:170px;">
-                <label class="filter-opt"><input type="checkbox" id="hdrFlt-critical" value="critical" onchange="hdrToggleFilter('critical')"> 🚨 Critical</label>
-                <label class="filter-opt"><input type="checkbox" id="hdrFlt-follow_up" value="follow_up" onchange="hdrToggleFilter('follow_up')"> 🔄 Follow Up</label>
-                <label class="filter-opt"><input type="checkbox" id="hdrFlt-pending" value="pending" onchange="hdrToggleFilter('pending')"> ⏳ Pending</label>
+                <div class="filter-opt" id="hdrFlt-critical" onclick="hdrToggleFilter('critical')">🚨 Critical</div>
+                <div class="filter-opt" id="hdrFlt-follow_up" onclick="hdrToggleFilter('follow_up')">🔄 Follow Up</div>
+                <div class="filter-opt" id="hdrFlt-pending" onclick="hdrToggleFilter('pending')">⏳ Pending</div>
                 <div class="filter-opt" style="justify-content:center;color:var(--danger);border-bottom:none;border-top:1px solid var(--border);" onclick="hdrClearFilters()">Reset</div>
             </div>
         </div>
-        <button onclick="clearHeaderSearch()" title="Clear"
+        <button onclick="handleSearchCloseClick()" title="Clear and Close"
             style="background:transparent;border:none;color:rgba(255,255,255,0.75);font-size:1.2rem;cursor:pointer;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:.15s;flex-shrink:0;"
             onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(255,255,255,0.75)'">✕</button>
     </div>
@@ -327,6 +326,8 @@
     </div>
     <div class="ctx-right">
         <button class="ctx-btn" id="dashCtxEditBtn" onclick="openEditPtModal()" title="Edit Name">✏️</button>
+        <!-- ADD THIS BUTTON -->
+        <button class="ctx-btn" onclick="generateAiSummary()" title="AI Summary" style="font-size:1.1rem;">🧠</button>
         <button class="ctx-btn" onclick="prepareExport()" title="Export options">📨</button>
         <button class="ctx-btn del" onclick="ctxDeletePatients()" title="Delete">🗑️</button>
     </div>
@@ -401,6 +402,29 @@
         <div class="modal-row">
             <button class="mbtn sec" onclick="closeEditMsgModal()">Cancel</button>
             <button class="mbtn pri" onclick="saveMsgEdit()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── AI Summary Modal ── -->
+<div class="overlay" id="aiSummaryModal" onclick="outsideClick(event,'aiSummaryModal',closeAiSummaryModal)">
+    <div class="modal" style="max-width: 500px; width: 95%;">
+        <div class="modal-title">🧠 AI Handover Summary</div>
+        <div class="modal-sub">Synthesized clinical plan (Llama 4 Scout)</div>
+        
+        <!-- Config Section containing the Toggle Option -->
+        <div id="aiSummaryConfig" style="margin-bottom: 14px; padding: 12px; background: var(--input-bg); border: 1px solid var(--border); border-radius: 10px; text-align: left;">
+            <label style="display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; cursor: pointer; user-select: none;">
+                <input type="checkbox" id="aiIncludeTranscripts" style="width:18px; height:18px; accent-color:var(--teal);" onchange="saveAiTranscriptPref(this.checked)">
+                Include transcripts of audio & images (OCR)
+            </label>
+        </div>
+
+        <div id="aiSummaryText" style="min-height: 200px; max-height: 400px; overflow-y: auto; background:#f8fafc; border:1px solid var(--border); border-radius:10px; padding:12px; font-size:0.85rem; white-space:pre-wrap; text-align:left; user-select:text; font-family:inherit;"></div>
+        
+        <div class="modal-row" style="margin-top:14px;">
+            <button class="mbtn sec" onclick="closeAiSummaryModal()">Close</button>
+            <button class="mbtn pri" id="aiActionBtn" onclick="startAiSummaryPipeline()">✨ Generate Handover</button>
         </div>
     </div>
 </div>
@@ -613,7 +637,6 @@ function requestDriveAccess(callback) {
     _ensureDriveClient();
     if (!_driveTokenClient) { alert('Google auth not loaded yet. Please wait a moment.'); return; }
     _driveAuthCallback = callback;
-    // We execute requestAccessToken synchronously per Google's gesture policy requirements
     _driveTokenClient.requestAccessToken({ prompt: localStorage.getItem('medflow_drive_authed') ? '' : 'consent' });
 }
 
@@ -688,22 +711,50 @@ function openHeaderSearch() {
     _headerSearchOpen = true;
     document.getElementById('hdrNormal').style.display = 'none';
     document.getElementById('hdrSearch').style.display = 'flex';
-    // Sync filter checkboxes to current active filters
+    
+    const inPatient = !document.getElementById('patientDetail').classList.contains('hidden');
+    const backBtn = document.getElementById('hdrSearchBackBtn');
+    if (inPatient) {
+        backBtn.classList.remove('hidden');
+    } else {
+        backBtn.classList.add('hidden');
+    }
+    
     syncHdrFilterUI();
     setTimeout(() => document.getElementById('hdrSearchInp').focus(), 60);
 }
 
-function closeHeaderSearch() {
+function handleSearchBackClick() {
+    const inPatient = !document.getElementById('patientDetail').classList.contains('hidden');
+    if (inPatient) {
+        showDashboard();
+        const inp = document.getElementById('hdrSearchInp');
+        if (inp) inp.placeholder = 'Search patients or notes…';
+        document.getElementById('hdrSearchBackBtn').classList.add('hidden');
+        syncHdrFilterUI();
+    }
+}
+
+function handleSearchCloseClick() {
+    document.getElementById('hdrSearchInp').value = '';
+    ptSearchTerm = '';
+    hdrClearFilters();
+    
     _headerSearchOpen = false;
     document.getElementById('hdrSearch').style.display = 'none';
     document.getElementById('hdrNormal').style.display = 'flex';
-    clearHeaderSearch();
+    
+    const inPatient = !document.getElementById('patientDetail').classList.contains('hidden');
+    if (inPatient) {
+        renderCurrentTab();
+    } else {
+        loadDashboard();
+    }
 }
 
 function clearHeaderSearch() {
     const inp = document.getElementById('hdrSearchInp');
     if (inp) inp.value = '';
-    // Clear search state for whichever view is active
     const inPatient = !document.getElementById('patientDetail').classList.contains('hidden');
     if (inPatient) {
         ptSearchTerm = '';
@@ -732,23 +783,25 @@ function hdrToggleFilter(mark) {
     const ctx = getSearchContext();
     toggleFilter(ctx, mark);
     syncHdrFilterUI();
-    // also update the filter button label
-    updateHdrFilterBtn(ctx);
 }
 
 function hdrClearFilters() {
     const ctx = getSearchContext();
     clearFilters(ctx);
     syncHdrFilterUI();
-    updateHdrFilterBtn(ctx);
 }
 
 function syncHdrFilterUI() {
     const ctx = getSearchContext();
     const activeSet = ctx === 'dash' ? dashFilters : tabFilters;
     ['critical','follow_up','pending'].forEach(m => {
-        const cb = document.getElementById(`hdrFlt-${m}`);
-        if (cb) cb.checked = activeSet.has(m);
+        const el = document.getElementById(`hdrFlt-${m}`);
+        if (el) {
+            el.className = 'filter-opt';
+            if (activeSet.has(m)) {
+                el.classList.add(`active-${m}`);
+            }
+        }
     });
     updateHdrFilterBtn(ctx);
 }
@@ -787,7 +840,6 @@ function toggleFilter(context, mark) {
     if (set.has(mark)) set.delete(mark);
     else set.add(mark);
 
-    updateFilterUI(context);
     if(context === 'dash') filterDashboard();
     else renderCurrentTab();
 }
@@ -795,31 +847,16 @@ function toggleFilter(context, mark) {
 function clearFilters(context) {
     const set = context === 'dash' ? dashFilters : tabFilters;
     set.clear();
-    updateFilterUI(context);
+
     if(context === 'dash') filterDashboard();
     else renderCurrentTab();
 }
 
-function updateFilterUI(context) {
-    const set = context === 'dash' ? dashFilters : tabFilters;
-    const btn = document.getElementById(context + 'FilterBtn');
-    
-    if (set.size > 0) {
-        btn.classList.add('active-filter');
-        btn.innerHTML = 'Filtered';
-    } else {
-        btn.classList.remove('active-filter');
-        btn.innerHTML = 'All Notes';
-    }
-    
-    const menu = document.getElementById(context + 'FilterMenu');
-    ['critical', 'follow_up', 'pending'].forEach(mark => {
-        const cb = menu.querySelector(`input[value="${mark}"]`);
-        if(cb) cb.checked = set.has(mark);
-    });
-}
-
 // ── Utils ──
+// Safely parse local storage variables without causing execution errors
+const safeJsonParse = (str, fallback) => {
+    try { return JSON.parse(str) || fallback; } catch(e) { return fallback; }
+};
 function initials(name) { return name.trim().split(/\s+/).map(w=>w[0]).slice(0,2).join('').toUpperCase() || '?'; }
 function fmtTime(ts) { return !ts ? '' : new Date(ts).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
 function fmtDateLabel(ts) {
@@ -834,7 +871,7 @@ function fmtDateLabel(ts) {
     const sameYear = d.getFullYear() === now.getFullYear();
     return d.toLocaleDateString([], { weekday:'short', month:'short', day:'numeric', ...(sameYear ? {} : {year:'numeric'}) });
 }
-function escHtml(s) { return !s ? '' : s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escHtml(s) { return !s ? '' : s.replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>'); }
 
 // ── Dashboard (Patients) ──
 async function addPatient() {
@@ -854,7 +891,7 @@ async function loadDashboard() {
 }
 
 function renderPatients(pts) {
-    cachedPatients = pts; // keep in sync for synchronous share access
+    cachedPatients = pts;
     const inp = document.getElementById('hdrSearchInp');
     const term = (inp ? inp.value : '').toLowerCase().trim();
     const list = document.getElementById('patientList');
@@ -904,16 +941,6 @@ function renderPatients(pts) {
                         matches.push({ text: e.text, secId, idx, mark: e.mark });
                     }
                 });
-            }
-            if(matches.length === 0) {
-                 for (const [secId, sec] of Object.entries(p.sections)) {
-                    if(!Array.isArray(sec)) continue;
-                    sec.forEach((e, idx) => {
-                        let matchT = term && (e.text && e.text.toLowerCase().includes(term));
-                        let matchM = dashFilters.size > 0 && dashFilters.has(e.mark);
-                        if ((matchT || matchM) && e.text) { matches.push({ text: e.text, secId, idx, mark: e.mark }); }
-                    });
-                }
             }
 
             if(matches.length > 0) {
@@ -972,7 +999,6 @@ function togglePtSelection(id, forceAdd = false) {
     if (pos >= 0 && !forceAdd) { selectedPts.splice(pos, 1); } 
     else if (pos === -1) { selectedPts.push(id); }
     
-    // Update only this card's visual state — no list re-render so order never changes
     const card = document.querySelector(`.p-card[data-pt-id="${id}"]`);
     if (card) card.classList.toggle('selected-card', selectedPts.includes(id));
 
@@ -989,7 +1015,6 @@ function updateDashContext() {
 function closeDashContext() {
     document.getElementById('dashContextHdr').classList.remove('open');
     selectedPts = [];
-    // Clear highlights in-place — no re-render, no reorder
     document.querySelectorAll('.p-card.selected-card').forEach(c => c.classList.remove('selected-card'));
 }
 
@@ -1011,31 +1036,33 @@ async function ctxDeletePatients() {
     if(confirm(`Delete ${selectedPts.length} patient(s)?`)) {
         await Promise.all(selectedPts.map(id => db.patients.delete(id)));
         closeDashContext();
-        loadDashboard(); // Added this line to re-render the list
+        loadDashboard();
     }
 }
 
 // ── Patient Detail & Tabs ──
 async function openPatient(id, targetTab = 'tasks') {
     currentPatient = await db.patients.get(id);
-    // Ensure all sections exist (handles records created before management tab)
     ['history','investigations','labs','tasks','management'].forEach(s => {
         if (!currentPatient.sections[s]) currentPatient.sections[s] = [];
     });
     document.getElementById('dashboard').classList.add('hidden');
     document.getElementById('patientDetail').classList.remove('hidden');
     document.getElementById('backBtn').classList.remove('hidden');
+    document.getElementById('hdrBrand').classList.add('hidden'); // Hide logo & branding
     document.getElementById('fabContainer').classList.add('hidden');
     
-    // Update search placeholder for patient context
     const hdrInp = document.getElementById('hdrSearchInp');
     if (hdrInp) hdrInp.placeholder = 'Search notes & transcripts…';
 
     tabFilters.clear();
-    updateFilterUI('tab');
-    if (_headerSearchOpen) syncHdrFilterUI();
+    
+    // Ensure back button in search overlay displays if entering while searching
+    if (_headerSearchOpen) {
+        document.getElementById('hdrSearchBackBtn').classList.remove('hidden');
+        syncHdrFilterUI();
+    }
 
-    // Carry header search term into patient view
     const globalTerm = (hdrInp ? hdrInp.value : '').trim();
     ptSearchTerm = globalTerm;
 
@@ -1053,8 +1080,9 @@ function showDashboard() {
     document.getElementById('dashboard').classList.remove('hidden');
     document.getElementById('patientDetail').classList.add('hidden');
     document.getElementById('backBtn').classList.add('hidden');
+    document.getElementById('hdrBrand').classList.remove('hidden'); // Show logo & branding
     document.getElementById('fabContainer').classList.remove('hidden');
-    // Restore dashboard search placeholder and re-sync filters
+    
     const hdrInp = document.getElementById('hdrSearchInp');
     if (hdrInp) hdrInp.placeholder = 'Search patients or notes…';
     ptSearchTerm = '';
@@ -1136,7 +1164,6 @@ function renderCurrentTab() {
         let hasText = !!entry.text;
         
         let matchT = !term || (hasText && entry.text.toLowerCase().includes(term));
-        // Also search through transcripts and OCR text
         if (!matchT && term) {
             const transcriptBlob = [
                 ...(entry.transcriptions || []),
@@ -1150,7 +1177,6 @@ function renderCurrentTab() {
 
         if (!matchT || !matchM) return;
 
-        // ── Date separator (WhatsApp-style) ──
         const dateLabel = entry.timestamp ? fmtDateLabel(entry.timestamp) : null;
         if (dateLabel && dateLabel !== lastDateLabel) {
             lastDateLabel = dateLabel;
@@ -1185,7 +1211,6 @@ function renderCurrentTab() {
 
         let mediaHtml = '';
 
-        // Helper to generate image block with OCR button
         const generateImageBlock = (imgBlob, ocrText, imgIndex) => {
             const hasOcr = !!ocrText;
             const btnClass = hasOcr ? "t-btn has-text" : "t-btn";
@@ -1199,7 +1224,6 @@ function renderCurrentTab() {
             </div>`;
         };
 
-        // Images (Legacy single + Modern array)
         if(entry.image) mediaHtml += generateImageBlock(entry.image, entry.legacyImageOcr || null, -1);
         if(entry.images && entry.images.length > 0) {
             entry.images.forEach((img, i) => {
@@ -1208,8 +1232,6 @@ function renderCurrentTab() {
             });
         }
         
-        // Audios (Legacy single + Modern array) with Transcribe Buttons
-        // Helper to generate the audio block
         const generateAudioBlock = (audioBlob, tText, audioIndex) => {
             const hasTrans = !!tText;
             const btnClass = hasTrans ? "t-btn has-text" : "t-btn";
@@ -1226,7 +1248,7 @@ function renderCurrentTab() {
             </div>`;
         };
 
-        if(entry.audio) { // legacy
+        if(entry.audio) {
             let trans = entry.legacyTranscription || null;
             mediaHtml += generateAudioBlock(entry.audio, trans, -1);
         }
@@ -1283,15 +1305,11 @@ async function jumpToMessage(e, pId, secId, idx) {
 }
 
 // ── Transcribe Logic ──
-
-// Groq — direct browser calls (CORS supported)
 const getGroqKey = () => localStorage.getItem('groq_api_key') || '';
 
 async function processTranscription(audioBlob) {
     if (!getGroqKey()) { alert('No API key set. Tap 🔑 in the top right to add your Groq key.'); throw new Error('No API key'); }
 
-    // ── Step 1: Whisper STT ──
-    // Vocabulary hint prompt (not instructions — Whisper only uses this for context/spelling bias)
     const WHISPER_VOCAB_HINT = 'طبي، مستشفى، ESR، Creatinine، ECG، ABG، CBC، CT، MRI، ICU، BP، HR، SpO2، IV، IM، PO، PRN، mg، ml، mmHg، diagnosis، follow-up، labs، ward';
 
     const audioFile = new Blob([await audioBlob.arrayBuffer()], { type: 'audio/webm' });
@@ -1321,7 +1339,6 @@ async function processTranscription(audioBlob) {
     const rawTranscript = whisperData.text || '';
     if (!rawTranscript.trim()) return '';
 
-// ── Step 2: LLM Semantic Summarization ──
     const SYSTEM_PROMPT = `You are an expert clinical scribe specializing in Egyptian Arabic medical handovers mixed with English terminology.
 
 Strict Rules for Content Extraction:
@@ -1413,26 +1430,23 @@ async function handleOCR(e, msgIdx, imgIdx) {
 }
 
 async function handleTranscribe(e, msgIdx, audioIdx) {
-    e.stopPropagation(); // prevent message selection
+    e.stopPropagation();
     
     let entry = currentPatient.sections[currentTab][msgIdx];
     
-    // Check if transcription already exists
     let existingText = null;
-    if (audioIdx === -1) { // Legacy single audio
+    if (audioIdx === -1) {
         existingText = entry.legacyTranscription;
     } else {
         if (!entry.transcriptions) entry.transcriptions = [];
         existingText = entry.transcriptions[audioIdx];
     }
     
-    // If we already have text, just show it.
     if (existingText) {
         showTranscriptModal(existingText);
         return;
     }
     
-    // No text yet? Let's process it.
     const btnId = `tbtn-${msgIdx}-${audioIdx}`;
     const btn = document.getElementById(btnId);
     if(btn) {
@@ -1441,13 +1455,9 @@ async function handleTranscribe(e, msgIdx, audioIdx) {
     }
     
     try {
-        // Get the specific blob
         const audioBlob = audioIdx === -1 ? entry.audio : entry.audios[audioIdx];
-        
-        // Make the API call
         const transcribedText = await processTranscription(audioBlob);
         
-        // Save the result back to DB
         if (audioIdx === -1) {
             entry.legacyTranscription = transcribedText;
         } else {
@@ -1455,8 +1465,6 @@ async function handleTranscribe(e, msgIdx, audioIdx) {
         }
         
         await saveData();
-        
-        // Refresh UI and show popup
         renderCurrentTab();
         showTranscriptModal(transcribedText);
         
@@ -1477,7 +1485,6 @@ function formatTranscriptText(text) {
         let trimmed = line.trim();
         if (!trimmed) return '<div style="min-height:0.8em"></div>';
         
-        // Find the first alphabetical character to determine alignment
         const firstCharMatch = trimmed.match(/[a-zA-Z\u0600-\u06FF]/);
         let isArabic = false;
         if (firstCharMatch) {
@@ -1487,10 +1494,7 @@ function formatTranscriptText(text) {
         const dir = isArabic ? 'rtl' : 'ltr';
         const align = isArabic ? 'right' : 'left';
         
-        // Escape HTML
         let escaped = escHtml(trimmed);
-        
-        // Apply Markdown Bold
         escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
         
         return `<div dir="${dir}" style="text-align: ${align}; margin-bottom: 4px; line-height: 1.5;">${escaped}</div>`;
@@ -1524,7 +1528,6 @@ function copyTranscription() {
         fallbackCopy(text, successFeedback);
     }
 }
-
 
 // ── Compression & Multiple Input ──
 async function compressImage(file) {
@@ -1600,14 +1603,13 @@ function sendText() {
         text: text, 
         images: [...currentStaging.images], 
         audios: [...currentStaging.audios],
-        transcriptions: new Array(currentStaging.audios.length).fill(null), // Array map for transcriptions
+        transcriptions: new Array(currentStaging.audios.length).fill(null),
         mark: null, bold: false, strike: false, under: false, timestamp: Date.now(), edited: false
     };
     if (isTask) entry.done = false;
     
     currentPatient.sections[currentTab].push(entry);
     
-    // Reset staging & inputs
     inp.value=''; inp.style.height='auto'; 
     currentStaging = {images: [], audios: []}; 
     updatePreview();
@@ -1751,7 +1753,6 @@ async function startAudioRec() {
         
         recorder.onstop = () => { 
             const blobType = recorder.mimeType || 'audio/webm';
-            // Push to arrays
             currentStaging.audios.push(new Blob(audioChunks, { type: blobType })); 
             updatePreview(); 
             
@@ -1875,7 +1876,6 @@ async function uploadToDrive() {
             const result = await res.json();
             const fileId = result.id;
 
-            // Make the file accessible to anyone with the link
             await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`, {
                 method: 'POST',
                 headers: { 
@@ -1887,7 +1887,6 @@ async function uploadToDrive() {
 
             const link = `https://drive.google.com/file/d/${fileId}/view?usp=sharing`;
             
-            // Save to local upload history
             try {
                 const ptData = await Promise.all(selectedPts.map(id => db.patients.get(id)));
                 const hist = JSON.parse(localStorage.getItem('medflow_upload_history') || '[]');
@@ -1970,12 +1969,10 @@ function importFromLink() {
     
     requestDriveAccess(async () => {
         try {
-            // Standard API fetch
             let res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
                 headers: { 'Authorization': 'Bearer ' + driveToken }
             });
             
-            // Fallback strategy for public files where strict scoping policies block access 
             if (!res.ok && res.status === 404) {
                 res = await fetch(`https://drive.google.com/uc?export=download&id=${fileId}`);
             }
@@ -2000,7 +1997,7 @@ function importFromLink() {
                 const existing = await db.patients.where('name').equals(p.name).first();
                 if (existing) { 
                     p.id = existing.id; 
-                    p.lastModified = Date.now(); // bump to top of list
+                    p.lastModified = Date.now();
                     await db.patients.put(p); 
                 } else { 
                     delete p.id; 
@@ -2047,7 +2044,7 @@ function saveKey() {
     updateKeyBtnState();
     closeKeyModal();
 }
-function updateKeyBtnState() { /* keyBtn removed — key status shown inside modal */ }
+function updateKeyBtnState() { }
 
 // ── Upload History ──
 function renderUploadHistory(containerId) {
@@ -2071,8 +2068,7 @@ function renderUploadHistory(containerId) {
                 <div style="font-size:0.68rem;color:var(--muted);margin-top:2px;">${dateStr} · ${timeStr}</div>
             </div>
             <button id="${prefix}-histBtn-${i}" onclick="copyHistoryLink(${i}, '${prefix}')" title="Copy link"
-                style="background:transparent;border:none;cursor:pointer;font-size:1rem;color:var(--teal);padding:4px 6px;flex-shrink:0;border-radius:6px;transition:.15s;"
-                onmouseenter="this.style.background='rgba(18,140,126,0.1)'" onmouseleave="this.style.background='transparent'">📋</button>
+                style="background:var(--teal-light);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:0.75rem;padding:6px 14px;cursor:pointer;flex-shrink:0;transition:.15s;font-family:inherit;display:flex;align-items:center;justify-content:center;">Copy</button>
         </div>`;
     }).join('');
 }
@@ -2084,7 +2080,16 @@ function copyHistoryLink(index, prefix) {
     if (!item || !item.link) return;
     const p = prefix || 'uploadHistoryList';
     const btn = document.getElementById(`${p}-histBtn-${index}`);
-    const copy = () => { if (btn) { btn.textContent = '✓'; btn.style.color = 'var(--teal-light)'; setTimeout(() => { btn.textContent = '📋'; btn.style.color = 'var(--teal)'; }, 1600); } };
+    const copy = () => { 
+        if (btn) { 
+            btn.textContent = 'Copied!'; 
+            btn.style.background = '#15803d';
+            setTimeout(() => { 
+                btn.textContent = 'Copy'; 
+                btn.style.background = 'var(--teal-light)'; 
+            }, 1600); 
+        } 
+    };
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(item.link).then(copy).catch(() => fallbackCopy(item.link, copy));
     } else { fallbackCopy(item.link, copy); }
@@ -2092,6 +2097,233 @@ function copyHistoryLink(index, prefix) {
 
 loadDashboard();
 updateKeyBtnState();
+
+// ── AI Summary Pipeline (Llama 4 Scout -> Fallback) ──
+
+function closeAiSummaryModal() {
+    document.getElementById('aiSummaryModal').classList.remove('open');
+}
+
+// ── AI Summary Preferences & Pipeline ──
+
+function loadAiTranscriptPref() {
+    const val = localStorage.getItem('medflow_ai_include_transcripts');
+    const checkbox = document.getElementById('aiIncludeTranscripts');
+    if (checkbox) {
+        checkbox.checked = (val === null) ? true : (val === '1');
+    }
+}
+
+function saveAiTranscriptPref(checked) {
+    localStorage.setItem('medflow_ai_include_transcripts', checked ? '1' : '0');
+}
+
+function formatEntriesForLlm(entries, includeTranscripts) {
+    return entries.map(e => {
+        const timeStr = e.timestamp ? new Date(e.timestamp).toLocaleString('en-GB') : 'No Time';
+        const textStr = e.text || '';
+        const markStr = e.mark ? `[Mark: ${e.mark}]` : '';
+        const statusStr = e.done !== undefined ? `[Task Done: ${e.done}]` : '';
+        
+        let mediaTextBlob = '';
+        if (includeTranscripts) {
+            const transcripts = [];
+            if (e.transcriptions && e.transcriptions.length) {
+                e.transcriptions.forEach(t => { if (t) transcripts.push(`[Audio Transcript: ${t}]`); });
+            }
+            if (e.legacyTranscription) {
+                transcripts.push(`[Audio Transcript: ${e.legacyTranscription}]`);
+            }
+            if (e.imageOcr && e.imageOcr.length) {
+                e.imageOcr.forEach(o => { if (o) transcripts.push(`[Image OCR Text: ${o}]`); });
+            }
+            if (e.legacyImageOcr) {
+                transcripts.push(`[Image OCR Text: ${e.legacyImageOcr}]`);
+            }
+            if (transcripts.length > 0) {
+                mediaTextBlob = ' ' + transcripts.join(' ');
+            }
+        }
+        return `[${timeStr}] [Section: ${e.secId}] ${markStr} ${statusStr} ${textStr}${mediaTextBlob}`;
+    }).join('\n');
+}
+
+async function generateAiSummary() {
+    if (!selectedPts.length) return;
+    
+    const modal = document.getElementById('aiSummaryModal');
+    const summaryText = document.getElementById('aiSummaryText');
+    const actionBtn = document.getElementById('aiActionBtn');
+    const configDiv = document.getElementById('aiSummaryConfig');
+    
+    configDiv.classList.remove('hidden');
+    summaryText.innerHTML = "Select options above and tap <b>Generate Handover</b> to start analysis.";
+    
+    actionBtn.disabled = false;
+    actionBtn.innerHTML = "✨ Generate Handover";
+    actionBtn.onclick = startAiSummaryPipeline;
+    
+    loadAiTranscriptPref();
+    modal.classList.add('open');
+}
+
+async function startAiSummaryPipeline() {
+    const summaryText = document.getElementById('aiSummaryText');
+    const actionBtn = document.getElementById('aiActionBtn');
+    const configDiv = document.getElementById('aiSummaryConfig');
+    
+    const includeTranscripts = document.getElementById('aiIncludeTranscripts').checked;
+    
+    configDiv.classList.add('hidden');
+    summaryText.innerHTML = "⏳ Initializing clinical pipeline...";
+    actionBtn.disabled = true;
+    actionBtn.innerHTML = "Processing...";
+    
+    try {
+        const patients = await Promise.all(selectedPts.map(id => db.patients.get(id)));
+        let finalHandovers = [];
+        const now = Date.now();
+        const boundary = now - 24 * 60 * 60 * 1000;
+        
+        for (let i = 0; i < patients.length; i++) {
+            const p = patients[i];
+            summaryText.innerHTML = `⏳ Analyzing patient ${i + 1}/${patients.length}: <b>${p.name}</b>...`;
+            
+            let allEntries = [];
+            for (const [secId, list] of Object.entries(p.sections)) {
+                if (!Array.isArray(list)) continue;
+                list.forEach(e => {
+                    allEntries.push({ ...e, secId });
+                });
+            }
+            allEntries.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            
+            if (allEntries.length === 0) {
+                finalHandovers.push(`${p.name}\n${new Date().toLocaleDateString('en-GB', {day: 'numeric', month: 'numeric'})}\nNo notes recorded.`);
+                continue;
+            }
+            
+            const olderEntries = allEntries.filter(e => (e.timestamp || 0) < boundary);
+            const recentEntries = allEntries.filter(e => (e.timestamp || 0) >= boundary);
+            
+            let historySummary = "No historical logs older than 24h.";
+            if (olderEntries.length > 0) {
+                const olderText = formatEntriesForLlm(olderEntries, includeTranscripts);
+                const sysPrompt1 = "You are an advanced medical scribe. Analyze clinical entries older than 24 hours. Summarize: active diagnoses, baseline metrics, exam trends, and active ongoing treatment plans. Be precise, structured, and extremely concise.";
+                const userPrompt1 = `Patient: ${p.name}\nHistorical Logs:\n${olderText}`;
+                historySummary = await callGroqWithFallback(sysPrompt1, userPrompt1);
+            }
+            
+            const recentText = formatEntriesForLlm(recentEntries, includeTranscripts);
+            const sysPrompt2 = `You are an expert clinical resident. Synthesize the provided baseline clinical context along with new updates from the last 24 hours to generate a clear, highly organized clinical handover profile. 
+
+Format the output EXACTLY matching this block structure. Do not use conversational preambles or chat metadata, use emojis and symbols to make it easier to read. 
+
+\${p.name}
+\${new Date().toLocaleDateString('en-GB', {day: 'numeric', month: 'numeric'})}
+■ plans:
+[Consolidated next steps, tasks to check on shift, diagnostic plans]
+■ Updates:
+[Log changes in condition, procedures completed, discharge status, active management updates]
+■ Ex:
+[Most recent physical exam baseline parameters]
+■ Investigations:
+[New imaging/procedure results, pending scans]
+■ Labs:
+[Latest labs analysis compiled chronologically with dates]`;
+
+            const userPrompt2 = `Patient: ${p.name}
+Historical Context:
+${historySummary}
+
+Recent 24-Hour Logs:
+${recentText}`;
+
+            const patientHandover = await callGroqWithFallback(sysPrompt2, userPrompt2);
+            finalHandovers.push(patientHandover.trim());
+        }
+        
+        const dateString = new Date().toLocaleDateString('en-GB', {day: 'numeric', month: 'numeric'});
+        const outputHeader = `Neurology ${dateString}\n\n`;
+        const separator = "\n\n————————————\n\n";
+        summaryText.textContent = outputHeader + finalHandovers.join(separator);
+        
+        actionBtn.disabled = false;
+        actionBtn.innerHTML = "📋 Copy Handover";
+        actionBtn.onclick = copyAiSummary;
+        
+    } catch (err) {
+        summaryText.innerHTML = `<span style="color:var(--danger)">❌ Pipeline failed: ${err.message || String(err)}</span>`;
+        actionBtn.disabled = false;
+        actionBtn.innerHTML = "Retry";
+        actionBtn.onclick = startAiSummaryPipeline;
+        configDiv.classList.remove('hidden');
+    }
+}
+
+function copyAiSummary() {
+    const el = document.getElementById('aiSummaryText');
+    const text = el.textContent || el.innerText;
+    const btn = document.getElementById('aiActionBtn');
+    
+    const successFeedback = () => {
+        const origText = btn.innerHTML;
+        btn.innerHTML = 'Copied!';
+        setTimeout(() => btn.innerHTML = origText, 1500);
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text)
+            .then(successFeedback)
+            .catch(() => fallbackCopy(text, successFeedback));
+    } else {
+        fallbackCopy(text, successFeedback);
+    }
+}
+
+async function callGroqWithFallback(systemPrompt, userPrompt) {
+    const key = getGroqKey();
+    if (!key) {
+        alert('No Groq API key set. Tap 🔑 in the menu to add your key.');
+        throw new Error('No API Key');
+    }
+    
+    // Ordered endpoints: Primary Llama 4 Scout, Fallbacks
+    const models = [
+        'meta-llama/llama-4-scout-17b-16e-instruct',
+        'openai/gpt-oss-120b',
+        'llama-3.3-70b-versatile'
+    ];
+    
+    for (let model of models) {
+        try {
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': 'Bearer ' + key,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    temperature: 0.1,
+                    max_tokens: 1500
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                return data.choices?.[0]?.message?.content || '';
+            }
+        } catch (e) {
+            console.warn(`Model ${model} execution failed, shifting to next...`, e);
+        }
+    }
+    throw new Error("All Groq models failed. Please check network or API limits.");
+}
+
 </script>
 </body>
 </html>
