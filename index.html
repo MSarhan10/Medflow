@@ -4,88 +4,64 @@
     <title>Cloud Share App</title>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
-        body { font-family: sans-serif; padding: 20px; }
-        .box { border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
+        #app-log { background: #000; color: #0f0; padding: 10px; height: 200px; overflow-y: scroll; margin-top: 20px; font-family: monospace; font-size: 12px; }
     </style>
 </head>
 <body>
-
-    <div class="box">
-        <button id="auth-btn" onclick="handleAuthClick()">Sign In / Connect Drive</button>
-    </div>
-
-    <div class="box">
-        <h3>Upload Data</h3>
-        <input type="text" id="text-input" placeholder="Enter notes"><br><br>
-        <button onclick="processAndUpload()">Save to Drive</button>
-        <p id="status"></p>
-    </div>
+    <button onclick="handleAuthClick()">1. Sign In</button>
+    <button onclick="processAndUpload()">2. Upload Data</button>
+    <div id="app-log">App Logs will appear here...</div>
 
     <script>
-        const CLIENT_ID = '585974304646-v0jg28j9vvphg9c86t15jore9qclm2c3.apps.googleusercontent.com';
-        const SCOPE = 'https://www.googleapis.com/auth/drive.file';
-        let accessToken = null; // We store it here!
+        const logBox = document.getElementById('app-log');
+        function logger(msg) { logBox.innerHTML += `<br>${msg}`; }
 
-        // 1. Initialize
-        window.onload = function() {
+        const CLIENT_ID = '585974304646-v0jg28j9vvphg9c86t15jore9qclm2c3.apps.googleusercontent.com';
+        let accessToken = null;
+
+        window.onload = () => {
+            logger("App Loaded.");
             tokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: CLIENT_ID,
-                scope: SCOPE,
+                scope: 'https://www.googleapis.com/auth/drive.file',
                 callback: (resp) => { 
-                    accessToken = resp.access_token; 
-                    document.getElementById('auth-btn').innerText = "Connected!";
-                    console.log("Token obtained!");
+                    if(resp.access_token) {
+                        accessToken = resp.access_token; 
+                        logger("SUCCESS: Logged in!");
+                    } else {
+                        logger("ERROR: Login failed.");
+                    }
                 }
             });
         };
 
         function handleAuthClick() { tokenClient.requestAccessToken(); }
 
-        // 2. The Corrected Upload
         async function processAndUpload() {
-            if (!accessToken) { alert("Please sign in first!"); return; }
-            
-            const text = document.getElementById('text-input').value;
-            const status = document.getElementById('status');
-            status.innerText = "Uploading...";
-
-            const metadata = { name: 'my-data.json', mimeType: 'application/json' };
-            const data = { content: text };
-            const boundary = 'foo_bar_baz';
-
-            const body = [
-                `--${boundary}`,
-                'Content-Type: application/json; charset=UTF-8',
-                '',
-                JSON.stringify(metadata),
-                `--${boundary}`,
-                'Content-Type: application/json',
-                '',
-                JSON.stringify(data),
-                `--${boundary}--`
-            ].join('\r\n');
+            if (!accessToken) { logger("ERROR: Sign in first!"); return; }
+            logger("Uploading...");
 
             try {
+                const metadata = { name: 'test.json', mimeType: 'application/json' };
+                const data = { content: "hello world" };
+                const boundary = 'foo_bar_baz';
+                const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${JSON.stringify(data)}\r\n--${boundary}--`;
+
                 const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
                     method: 'POST',
-                    headers: { 
-                        'Authorization': 'Bearer ' + accessToken,
-                        'Content-Type': `multipart/related; boundary=${boundary}`
-                    },
+                    headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': `multipart/related; boundary=${boundary}` },
                     body: body
                 });
 
-                const result = await res.json();
                 if (res.ok) {
-                    status.innerText = "Saved! ID: " + result.id;
-                    alert("Share this ID: " + result.id);
+                    const result = await res.json();
+                    logger("SUCCESS! ID: " + result.id);
                 } else {
-                    console.error("API Error:", result);
-                    status.innerText = "Error: " + result.error.message;
+                    const err = await res.json();
+                    logger("API ERROR: " + JSON.stringify(err));
                 }
             } catch (err) {
-                status.innerText = "Upload failed. Check console.";
-                console.error(err);
+                logger("CATCH ERROR: " + err.message);
             }
         }
     </script>
