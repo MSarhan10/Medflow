@@ -2,9 +2,7 @@
 <html>
 <head>
     <title>Cloud Share App</title>
-    <!-- Load Google APIs -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script src="https://apis.google.com/js/api.js" async defer></script>
     <style>
         body { font-family: sans-serif; padding: 20px; }
         .box { border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
@@ -19,71 +17,76 @@
     <div class="box">
         <h3>Upload Data</h3>
         <input type="text" id="text-input" placeholder="Enter notes"><br><br>
-        <input type="file" id="file-input"><br><br>
-        <button onclick="processAndUpload()">Compress & Save</button>
+        <button onclick="processAndUpload()">Save to Drive</button>
         <p id="status"></p>
-    </div>
-
-    <div class="box">
-        <h3>Retrieve Data</h3>
-        <input type="text" id="link-input" placeholder="Paste File ID here">
-        <button onclick="loadFile()">Load Data</button>
-        <div id="output"></div>
     </div>
 
     <script>
         const CLIENT_ID = '585974304646-v0jg28j9vvphg9c86t15jore9qclm2c3.apps.googleusercontent.com';
         const SCOPE = 'https://www.googleapis.com/auth/drive.file';
-        let tokenClient;
+        let accessToken = null; // We store it here!
 
         // 1. Initialize
         window.onload = function() {
             tokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: CLIENT_ID,
                 scope: SCOPE,
-                callback: (resp) => { if (resp.access_token) document.getElementById('auth-btn').innerText = "Connected!"; }
+                callback: (resp) => { 
+                    accessToken = resp.access_token; 
+                    document.getElementById('auth-btn').innerText = "Connected!";
+                    console.log("Token obtained!");
+                }
             });
         };
 
         function handleAuthClick() { tokenClient.requestAccessToken(); }
 
-        // 2. Compress and Upload
+        // 2. The Corrected Upload
         async function processAndUpload() {
-            const file = document.getElementById('file-input').files[0];
-            const text = document.getElementById('text-input').value;
+            if (!accessToken) { alert("Please sign in first!"); return; }
             
-            document.getElementById('status').innerText = "Compressing and Uploading...";
+            const text = document.getElementById('text-input').value;
+            const status = document.getElementById('status');
+            status.innerText = "Uploading...";
 
-            // Combine Data into a Blob (JSON)
-            const data = { text: text, fileName: file.name };
-            const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+            const metadata = { name: 'my-data.json', mimeType: 'application/json' };
+            const data = { content: text };
+            const boundary = 'foo_bar_baz';
 
-            // Upload via GAPI
-            const metadata = { name: 'my-app-data.json', mimeType: 'application/json' };
-            const form = new FormData();
-            form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-            form.append('file', blob);
+            const body = [
+                `--${boundary}`,
+                'Content-Type: application/json; charset=UTF-8',
+                '',
+                JSON.stringify(metadata),
+                `--${boundary}`,
+                'Content-Type: application/json',
+                '',
+                JSON.stringify(data),
+                `--${boundary}--`
+            ].join('\r\n');
 
-            fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-                method: 'POST',
-                headers: new Headers({ 'Authorization': 'Bearer ' + gapi.auth.getToken().access_token }),
-                body: form
-            }).then(res => res.json()).then(data => {
-                document.getElementById('status').innerText = "Saved! File ID: " + data.id;
-                alert("Share this ID: " + data.id);
-            });
-        }
+            try {
+                const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                    method: 'POST',
+                    headers: { 
+                        'Authorization': 'Bearer ' + accessToken,
+                        'Content-Type': `multipart/related; boundary=${boundary}`
+                    },
+                    body: body
+                });
 
-        // 3. Retrieve
-        function loadFile() {
-            const fileId = document.getElementById('link-input').value;
-            fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-                headers: { 'Authorization': 'Bearer ' + gapi.auth.getToken().access_token }
-            })
-            .then(res => res.json())
-            .then(data => {
-                document.getElementById('output').innerText = "Loaded: " + JSON.stringify(data);
-            });
+                const result = await res.json();
+                if (res.ok) {
+                    status.innerText = "Saved! ID: " + result.id;
+                    alert("Share this ID: " + result.id);
+                } else {
+                    console.error("API Error:", result);
+                    status.innerText = "Error: " + result.error.message;
+                }
+            } catch (err) {
+                status.innerText = "Upload failed. Check console.";
+                console.error(err);
+            }
         }
     </script>
 </body>
