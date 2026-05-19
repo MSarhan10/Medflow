@@ -6,6 +6,7 @@
     <title>MedFlow Handover</title>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             --teal:       #128C7E;
@@ -329,7 +330,7 @@
 <div id="fabContainer" class="fab-container">
     <div id="fabAddMenu" class="popup-menu hidden" style="bottom:70px;right:0;transform-origin:bottom right;min-width:200px;position:absolute;">
         <button onclick="openAddModal();closeFabMenu()">👤 New Patient</button>
-        <button onclick="document.getElementById('importFile').click();closeFabMenu()">📥 Import Patients</button>
+        <button onclick="openAddPatientsModal();closeFabMenu()">📥 Add Patients</button>
     </div>
     <button class="fab-btn fab-add" onclick="toggleFabMenu(event)" title="Options" id="fabAddBtn">+</button>
 </div>
@@ -358,8 +359,7 @@
     </div>
 </div>
 
-<!-- Standalone import input (used by FAB dropdown) -->
-<input type="file" id="importFile" class="hidden" accept=".txt" onchange="importData(event)">
+
 
 <div class="overlay" id="editMsgModal" onclick="outsideClick(event,'editMsgModal',closeEditMsgModal)">
     <div class="modal">
@@ -393,16 +393,25 @@
             <div class="modal-title">Preparing patients…</div>
             <div class="modal-sub" style="margin-bottom:0;">Packing notes, images & audio</div>
         </div>
-        <!-- Ready state -->
+        <!-- Ready to upload state -->
         <div id="shareReady" class="hidden">
-            <div style="font-size:2rem;margin-bottom:10px;">✅</div>
-            <div class="modal-title">Ready to export</div>
+            <div style="font-size:2rem;margin-bottom:10px;">☁️</div>
+            <div class="modal-title">Upload to Google Drive</div>
             <div class="modal-sub" id="shareReadySub" style="margin-bottom:20px;"></div>
+            <button class="mbtn pri" id="shareUploadBtn" onclick="uploadToDrive()" style="width:100%;margin-bottom:10px;">☁️ Upload & Get Link</button>
+            <button class="mbtn sec" style="width:100%;background:transparent;border:1px solid var(--border);" onclick="closeShareModal()">Cancel</button>
+        </div>
+        <!-- Link ready state -->
+        <div id="shareLinkReady" class="hidden">
+            <div style="font-size:2rem;margin-bottom:10px;">✅</div>
+            <div class="modal-title">Link Ready!</div>
+            <div class="modal-sub" style="margin-bottom:14px;">Tap WhatsApp to share, or copy the link</div>
+            <input class="modal-inp" id="shareLinkInp" readonly onclick="this.select()" style="font-size:0.75rem;cursor:pointer;margin-bottom:14px;">
             <div class="modal-row" style="margin-bottom:10px;">
-                <button class="mbtn sec" onclick="triggerSaveLocally()">💾 Save Locally</button>
-                <button class="mbtn pri" id="shareNowBtn" onclick="triggerShare()">📨 Share</button>
+                <button class="mbtn sec" onclick="copyShareLink()">📋 Copy</button>
+                <button class="mbtn pri" onclick="shareViaWhatsApp()">💬 WhatsApp</button>
             </div>
-            <button class="mbtn sec" style="width:100%; background:transparent; border:1px solid var(--border);" onclick="closeShareModal()">Cancel</button>
+            <button class="mbtn sec" style="width:100%;background:transparent;border:1px solid var(--border);" onclick="closeShareModal()">Done</button>
         </div>
         <!-- Error state -->
         <div id="shareError" class="hidden">
@@ -423,6 +432,32 @@
         <div class="modal-row">
             <button class="mbtn sec" onclick="closeKeyModal()">Cancel</button>
             <button class="mbtn pri" onclick="saveKey()">Save Key</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Add Patients (Drive Link) Modal ── -->
+<div class="overlay" id="addPatientsModal" onclick="outsideClick(event,'addPatientsModal',closeAddPatientsModal)">
+    <div class="modal">
+        <!-- Step 1: Sign in -->
+        <div id="addPtAuthStep">
+            <div class="modal-title">📥 Add Patients</div>
+            <div class="modal-sub">Sign in with Google to download patients from a shared link.</div>
+            <div class="modal-row">
+                <button class="mbtn sec" onclick="closeAddPatientsModal()">Cancel</button>
+                <button class="mbtn pri" onclick="signInForImport()">Sign In with Google</button>
+            </div>
+        </div>
+        <!-- Step 2: Paste link -->
+        <div id="addPtLinkStep" class="hidden">
+            <div class="modal-title">📥 Add Patients</div>
+            <div class="modal-sub">Paste the MedFlow link you received</div>
+            <input type="text" class="modal-inp" id="importLinkInp" placeholder="https://drive.google.com/file/d/…">
+            <div id="addPtStatus" style="font-size:0.78rem;margin:-8px 0 12px;color:var(--muted);min-height:1em;"></div>
+            <div class="modal-row">
+                <button class="mbtn sec" onclick="closeAddPatientsModal()">Cancel</button>
+                <button class="mbtn pri" onclick="importFromLink()">Download & Merge</button>
+            </div>
         </div>
     </div>
 </div>
@@ -533,6 +568,38 @@
 // ── DB & Globals ──
 const db = new Dexie("MedFlowPro14");
 db.version(1).stores({ patients: "++id, name, lastModified" });
+
+// ── Google Drive Auth ──
+const DRIVE_CLIENT_ID = '585974304646-v0jg28j9vvphg9c86t15jore9qclm2c3.apps.googleusercontent.com';
+let driveToken = null;
+let _driveTokenClient = null;
+let _driveAuthCallback = null;
+
+function _ensureDriveClient() {
+    if (_driveTokenClient || !window.google) return;
+    _driveTokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: DRIVE_CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/drive.file',
+        callback: (resp) => {
+            if (resp.access_token) {
+                driveToken = resp.access_token;
+                localStorage.setItem('medflow_drive_authed', '1');
+                if (_driveAuthCallback) { const cb = _driveAuthCallback; _driveAuthCallback = null; cb(); }
+            } else {
+                alert('Google Sign-In failed. Please try again.');
+            }
+        }
+    });
+}
+
+function requestDriveAccess(callback) {
+    if (driveToken) { callback(); return; }
+    _ensureDriveClient();
+    if (!_driveTokenClient) { alert('Google auth not loaded yet. Please wait a moment.'); return; }
+    _driveAuthCallback = callback;
+    // Skip consent screen if previously authorised
+    _driveTokenClient.requestAccessToken({ prompt: localStorage.getItem('medflow_drive_authed') ? '' : 'consent' });
+}
 
 let currentPatient = null;
 let currentTab = 'tasks';
