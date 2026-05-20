@@ -1056,7 +1056,9 @@ async function savePtEdit() {
     const pt = await db.patients.get(selectedPts[0]);
     pt.name = document.getElementById('editPtNameInp').value.trim();
     await db.patients.put(pt);
-    closeEditPtModal(); closeDashContext();
+    closeEditPtModal(); 
+    closeDashContext();
+    loadDashboard(); // This line refreshes the patient list on the dashboard
 }
 async function ctxDeletePatients() {
     if(!selectedPts.length) return;
