@@ -456,6 +456,7 @@
             <div class="modal-title">Upload to Google Drive</div>
             <div class="modal-sub" id="shareReadySub" style="margin-bottom:20px;"></div>
             <button class="mbtn pri" id="shareUploadBtn" onclick="uploadToDrive()" style="width:100%;margin-bottom:10px;">☁️ Upload & Get Link</button>
+            <button class="mbtn sec" onclick="saveFileLocally()" style="width:100%;margin-bottom:10px;">💾 Save Locally</button>
             <button class="mbtn sec" style="width:100%;background:transparent;border:1px solid var(--border);" onclick="closeShareModal()">Cancel</button>
         </div>
         <!-- Link ready state -->
@@ -503,34 +504,31 @@
     </div>
 </div>
 
-<!-- ── Add Patients (Drive Link) Modal ── -->
+<!-- ── Add Patients Modal ── -->
 <div class="overlay" id="addPatientsModal" onclick="outsideClick(event,'addPatientsModal',closeAddPatientsModal)">
     <div class="modal">
-        <!-- Step 1: Sign in -->
+        <div class="modal-title">📥 Add Patients</div>
+        <div id="addPtStatus" style="font-size:0.78rem;margin:0 0 10px;color:var(--muted);min-height:1em;"></div>
+
+        <!-- Drive section — sign-in gate (primary) -->
         <div id="addPtAuthStep">
-            <div class="modal-title">📥 Add Patients</div>
-            <div class="modal-sub">Sign in with Google to download patients from a shared link.</div>
-            <div class="modal-row">
-                <button class="mbtn sec" onclick="closeAddPatientsModal()">Cancel</button>
-                <button class="mbtn pri" onclick="signInForImport()">Sign In with Google</button>
-            </div>
+            <div class="modal-sub" style="margin-bottom:10px;">Sign in with Google to download from a shared Drive link.</div>
+            <button class="mbtn pri" onclick="signInForImport()" style="width:100%;margin-bottom:14px;">☁️ Sign In with Google</button>
         </div>
-        <!-- Step 2: Paste link -->
         <div id="addPtLinkStep" class="hidden">
-            <div class="modal-title">📥 Add Patients</div>
-            <div class="modal-sub">Paste the MedFlow link you received</div>
+            <div class="modal-sub" style="margin-bottom:10px;">Paste the MedFlow Drive link you received</div>
             <input type="text" class="modal-inp" id="importLinkInp" placeholder="https://drive.google.com/file/d/…">
-            <div id="addPtStatus" style="font-size:0.78rem;margin:-8px 0 12px;color:var(--muted);min-height:1em;"></div>
-            <div class="modal-row">
-                <button class="mbtn sec" onclick="closeAddPatientsModal()">Cancel</button>
-                <button class="mbtn pri" onclick="importFromLink()">Download & Merge</button>
-            </div>
-            <!-- Upload History -->
-            <div id="uploadHistorySection" style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">
-                <div style="font-size:0.75rem;font-weight:700;color:var(--muted);margin-bottom:8px;letter-spacing:0.3px;">📋 UPLOAD HISTORY</div>
-                <div id="uploadHistoryList" style="display:flex;flex-direction:column;gap:6px;max-height:170px;overflow-y:auto;"></div>
-            </div>
+            <button class="mbtn pri" onclick="importFromLink()" style="width:100%;margin-bottom:14px;">☁️ Download</button>
         </div>
+
+        <!-- Local file — always visible, secondary -->
+        <div style="border-top:1px solid var(--border);padding-top:14px;">
+            <div class="modal-sub" style="margin-bottom:10px;">Or import a locally saved MedFlow file</div>
+            <input type="file" id="localImportFile" accept=".txt,.json" class="hidden" onchange="importFromLocalFile(this)">
+            <button class="mbtn sec" onclick="document.getElementById('localImportFile').click()" style="width:100%;margin-bottom:10px;">📁 Upload Local File</button>
+        </div>
+
+        <button class="mbtn sec" onclick="closeAddPatientsModal()" style="width:100%;margin-top:4px;background:transparent;border:1px solid var(--border);">Cancel</button>
     </div>
 </div>
 
@@ -903,18 +901,32 @@ function renderPatients(pts) {
         let textMatch = !term || p.name.toLowerCase().includes(term);
         let hasMarkedNote = false;
         let hasTextNote = false;
+        let hasTranscriptNote = false;
 
         for(const sec of Object.values(p.sections)) {
             if(!Array.isArray(sec)) continue;
-            if(!hasTextNote && term) {
-                hasTextNote = sec.some(e => e.text && e.text.toLowerCase().includes(term));
+            if(term) {
+                if(!hasTextNote) {
+                    hasTextNote = sec.some(e => e.text && e.text.toLowerCase().includes(term));
+                }
+                if(!hasTranscriptNote) {
+                    hasTranscriptNote = sec.some(e => {
+                        const blobs = [
+                            ...(e.transcriptions || []),
+                            e.legacyTranscription || '',
+                            ...(e.imageOcr || []),
+                            e.legacyImageOcr || ''
+                        ].filter(Boolean);
+                        return blobs.some(t => t.toLowerCase().includes(term));
+                    });
+                }
             }
             if(dashFilters.size > 0 && !hasMarkedNote) {
                 hasMarkedNote = sec.some(e => dashFilters.has(e.mark));
             }
         }
         
-        let passText = (!term || textMatch || hasTextNote);
+        let passText = (!term || textMatch || hasTextNote || hasTranscriptNote);
         let passMark = (dashFilters.size === 0 || hasMarkedNote);
         return passText && passMark;
     });
@@ -938,7 +950,21 @@ function renderPatients(pts) {
                     let matchT = !term || (e.text && e.text.toLowerCase().includes(term));
                     let matchM = (dashFilters.size === 0) || dashFilters.has(e.mark);
                     if (matchT && matchM && e.text) {
-                        matches.push({ text: e.text, secId, idx, mark: e.mark });
+                        matches.push({ text: e.text, secId, idx, mark: e.mark, isMedia: false });
+                    }
+                    // Also surface media entries matched via transcript/OCR
+                    if (term && matchM) {
+                        const transcriptBlobs = [
+                            ...(e.transcriptions || []),
+                            e.legacyTranscription || '',
+                            ...(e.imageOcr || []),
+                            e.legacyImageOcr || ''
+                        ].filter(Boolean);
+                        const matchingT = transcriptBlobs.find(t => t.toLowerCase().includes(term));
+                        if (matchingT && !matchT) {
+                            const isAudio = !!(e.audio || (e.audios && e.audios.length));
+                            matches.push({ text: matchingT, secId, idx, mark: e.mark, isMedia: true, mediaType: isAudio ? 'audio' : 'image' });
+                        }
                     }
                 });
             }
@@ -948,7 +974,8 @@ function renderPatients(pts) {
                     matches.slice(0, 8).map(m => {
                         const limit = m.text.length > 55 ? m.text.substring(0,55) + '…' : m.text;
                         const badge = m.mark ? `[${TAGS[m.mark].icon}] ` : '';
-                        return `<div class="p-snippet" onclick="jumpToMessage(event, ${p.id}, '${m.secId}', ${m.idx})">${badge}"${limit}"</div>`;
+                        const mediaIcon = m.isMedia ? (m.mediaType === 'audio' ? '🎙️ ' : '🖼️ ') : '';
+                        return `<div class="p-snippet" onclick="jumpToMessage(event, ${p.id}, '${m.secId}', ${m.idx})">${badge}${mediaIcon}"${limit}"</div>`;
                     }).join('') + `</div>`;
             }
         }
@@ -1819,6 +1846,19 @@ function closeShareModal() {
     _pendingFileName = null;
 }
 
+function saveFileLocally() {
+    if (!_pendingShareFile) return;
+    const url = URL.createObjectURL(_pendingShareFile);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = _pendingFileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    closeShareModal();
+}
+
 async function prepareExport() {
     if (!selectedPts.length) return;
 
@@ -1927,7 +1967,6 @@ function openAddPatientsModal() {
     if (localStorage.getItem('medflow_drive_authed')) {
         document.getElementById('addPtAuthStep').classList.add('hidden');
         document.getElementById('addPtLinkStep').classList.remove('hidden');
-        renderUploadHistory('uploadHistoryList');
     } else {
         document.getElementById('addPtAuthStep').classList.remove('hidden');
         document.getElementById('addPtLinkStep').classList.add('hidden');
@@ -1944,7 +1983,6 @@ function signInForImport() {
     requestDriveAccess(() => {
         document.getElementById('addPtAuthStep').classList.add('hidden');
         document.getElementById('addPtLinkStep').classList.remove('hidden');
-        renderUploadHistory('uploadHistoryList');
     });
 }
 
@@ -1984,27 +2022,7 @@ function importFromLink() {
             
             document.getElementById('addPtStatus').textContent = '⏳ Merging patients...';
             
-            for (const p of imported) {
-                for (const sec in p.sections) {
-                    p.sections[sec] = p.sections[sec].map(entry => {
-                        if (entry.images && entry.images.length) entry.images = entry.images.map(img => fromB64(img));
-                        if (entry.audios && entry.audios.length) entry.audios = entry.audios.map(aud => fromB64(aud));
-                        if (entry.image && typeof entry.image === 'string') entry.image = fromB64(entry.image);
-                        if (entry.audio && typeof entry.audio === 'string') entry.audio = fromB64(entry.audio);
-                        return entry;
-                    });
-                }
-                const existing = await db.patients.where('name').equals(p.name).first();
-                if (existing) { 
-                    p.id = existing.id; 
-                    p.lastModified = Date.now();
-                    await db.patients.put(p); 
-                } else { 
-                    delete p.id; 
-                    p.lastModified = Date.now();
-                    await db.patients.add(p); 
-                }
-            }
+            await importPatientData(imported);
             
             document.getElementById('addPtStatus').textContent = '✅ Success!';
             setTimeout(() => {
@@ -2025,6 +2043,55 @@ const fromB64 = d => {
     const bstr = atob(data); let n=bstr.length; const u8 = new Uint8Array(n);
     while(n--) u8[n]=bstr.charCodeAt(n); return new Blob([u8],{type:mime});
 };
+
+async function importPatientData(imported) {
+    for (const p of imported) {
+        for (const sec in p.sections) {
+            p.sections[sec] = p.sections[sec].map(entry => {
+                if (entry.images && entry.images.length) entry.images = entry.images.map(img => fromB64(img));
+                if (entry.audios && entry.audios.length) entry.audios = entry.audios.map(aud => fromB64(aud));
+                if (entry.image && typeof entry.image === 'string') entry.image = fromB64(entry.image);
+                if (entry.audio && typeof entry.audio === 'string') entry.audio = fromB64(entry.audio);
+                return entry;
+            });
+        }
+        const existing = await db.patients.where('name').equals(p.name).first();
+        if (existing) { 
+            p.id = existing.id; 
+            p.lastModified = Date.now();
+            await db.patients.put(p); 
+        } else { 
+            delete p.id; 
+            p.lastModified = Date.now();
+            await db.patients.add(p); 
+        }
+    }
+}
+
+function importFromLocalFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    const status = document.getElementById('addPtStatus');
+    status.textContent = '⏳ Reading file...';
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        try {
+            const imported = JSON.parse(e.target.result);
+            status.textContent = '⏳ Merging patients...';
+            await importPatientData(imported);
+            status.textContent = '✅ Success!';
+            setTimeout(() => {
+                closeAddPatientsModal();
+                loadDashboard();
+                closeDashContext();
+            }, 1000);
+        } catch(err) {
+            status.textContent = '❌ ' + (err.message || String(err));
+        }
+        input.value = '';
+    };
+    reader.readAsText(file);
+}
 
 // ── API Key Management ──
 function openKeyModal() {
@@ -2119,37 +2186,32 @@ function saveAiTranscriptPref(checked) {
 }
 
 function formatEntriesForLlm(entries, includeTranscripts) {
+    const SECTION_LABELS = {
+        tasks: 'TASK/PLAN', history: 'HISTORY/PMH', investigations: 'INVESTIGATION',
+        labs: 'LAB RESULT', management: 'MANAGEMENT/MEDICATION'
+    };
     return entries.map(e => {
         const timeStr = e.timestamp ? new Date(e.timestamp).toLocaleString('en-GB') : 'No Time';
+        const secLabel = SECTION_LABELS[e.secId] || e.secId.toUpperCase();
         const textStr = e.text || '';
-        const markStr = e.mark ? `[Mark: ${e.mark}]` : '';
-        const statusStr = e.done !== undefined ? `[Task Done: ${e.done}]` : '';
-        
-        let mediaTextBlob = '';
+        const markStr = e.mark ? `[PRIORITY: ${e.mark.toUpperCase()}]` : '';
+        const doneStr = (e.secId === 'tasks' && e.done) ? '[COMPLETED]' : '';
+        let mediaBlob = '';
         if (includeTranscripts) {
-            const transcripts = [];
-            if (e.transcriptions && e.transcriptions.length) {
-                e.transcriptions.forEach(t => { if (t) transcripts.push(`[Audio Transcript: ${t}]`); });
-            }
-            if (e.legacyTranscription) {
-                transcripts.push(`[Audio Transcript: ${e.legacyTranscription}]`);
-            }
-            if (e.imageOcr && e.imageOcr.length) {
-                e.imageOcr.forEach(o => { if (o) transcripts.push(`[Image OCR Text: ${o}]`); });
-            }
-            if (e.legacyImageOcr) {
-                transcripts.push(`[Image OCR Text: ${e.legacyImageOcr}]`);
-            }
-            if (transcripts.length > 0) {
-                mediaTextBlob = ' ' + transcripts.join(' ');
-            }
+            const parts = [];
+            (e.transcriptions || []).forEach(t => { if (t) parts.push(`[AudioTranscript: ${t}]`); });
+            if (e.legacyTranscription) parts.push(`[AudioTranscript: ${e.legacyTranscription}]`);
+            (e.imageOcr || []).forEach(o => { if (o) parts.push(`[ImageOCR: ${o}]`); });
+            if (e.legacyImageOcr) parts.push(`[ImageOCR: ${e.legacyImageOcr}]`);
+            if (parts.length) mediaBlob = ' ' + parts.join(' ');
         }
-        return `[${timeStr}] [Section: ${e.secId}] ${markStr} ${statusStr} ${textStr}${mediaTextBlob}`;
+        return `[${timeStr}][${secLabel}]${markStr}${doneStr} ${textStr}${mediaBlob}`;
     }).join('\n');
 }
 
 async function generateAiSummary() {
-    if (!selectedPts.length) return;
+    const patientIds = [...(selectedPts || [])];
+    if (!patientIds.length) return;
     
     const modal = document.getElementById('aiSummaryModal');
     const summaryText = document.getElementById('aiSummaryText');
@@ -2161,105 +2223,125 @@ async function generateAiSummary() {
     
     actionBtn.disabled = false;
     actionBtn.innerHTML = "✨ Generate Handover";
-    actionBtn.onclick = startAiSummaryPipeline;
+    actionBtn.onclick = () => startAiSummaryPipeline(patientIds);
     
     loadAiTranscriptPref();
     modal.classList.add('open');
 }
 
-async function startAiSummaryPipeline() {
+async function startAiSummaryPipeline(patientIds) {
     const summaryText = document.getElementById('aiSummaryText');
     const actionBtn = document.getElementById('aiActionBtn');
     const configDiv = document.getElementById('aiSummaryConfig');
-    
+
     const includeTranscripts = document.getElementById('aiIncludeTranscripts').checked;
-    
+
     configDiv.classList.add('hidden');
-    summaryText.innerHTML = "⏳ Initializing clinical pipeline...";
+    summaryText.innerHTML = "⏳ Initializing single-request clinical pipeline...";
     actionBtn.disabled = true;
     actionBtn.innerHTML = "Processing...";
-    
+
     try {
-        const patients = await Promise.all(selectedPts.map(id => db.patients.get(id)));
         let finalHandovers = [];
-        const now = Date.now();
-        const boundary = now - 24 * 60 * 60 * 1000;
-        
-        for (let i = 0; i < patients.length; i++) {
-            const p = patients[i];
-            summaryText.innerHTML = `⏳ Analyzing patient ${i + 1}/${patients.length}: <b>${p.name}</b>...`;
-            
+
+        // Loop through each patient independently to isolate context completely
+        for (let i = 0; i < patientIds.length; i++) {
+            const pId = patientIds[i];
+            const p = await db.patients.get(pId);
+            if (!p) continue;
+
+            summaryText.innerHTML = `⏳ Processing ${i + 1}/${patientIds.length}: <b>${p.name}</b>...`;
+
             let allEntries = [];
             for (const [secId, list] of Object.entries(p.sections)) {
                 if (!Array.isArray(list)) continue;
-                list.forEach(e => {
-                    allEntries.push({ ...e, secId });
-                });
+                list.forEach(e => allEntries.push({ ...e, secId }));
             }
+            // Sort standard chronologically so the single prompt can easily parse baseline vs recent events
             allEntries.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-            
+
             if (allEntries.length === 0) {
-                finalHandovers.push(`${p.name}\n${new Date().toLocaleDateString('en-GB', {day: 'numeric', month: 'numeric'})}\nNo notes recorded.`);
+                finalHandovers.push(`### 👤 ${p.name}\nNo clinical notes recorded.`);
                 continue;
             }
+
+            // Consolidate entire timeline into one clean block
+            const completeTimelineText = formatEntriesForLlm(allEntries, includeTranscripts);
+
+            // ── Single Optimized Master Prompt ──
+            const masterSysPrompt = `You are an expert senior clinical resident generating a high-stakes ward handover profile from a patient's complete timeline history. Accuracy, context isolation, and rigid structural layout constraints are mandatory, only reply in English, be brief, accurate and substantive. 
+
+OUTPUT FORMAT — Use EXACTLY these headers and structural characters. Do NOT output a patient name line, as the app generates this automatically:
+
+⚠️ Allergies: [Extract known drug/food allergies with reaction type from the entire chart; write "None" if none documented]
+🩺 PMH: [Extract chronic conditions, relevant historical surgeries, or baselines from the entire chart, comma-separated]
+🔴 Active Problems:
+- [PRIMARY: The primary admission diagnosis/chief complaint or active medical crisis MUST be the first bullet]
+- [Other active physiological problems or complications requiring clinical attention during this upcoming shift]
+💊  Management & Active Plans:
+[Numbered entries tracking pending actions AND critical ongoing maintenance/titration therapies. You MUST explicitly include:
+ 1. Active high-alert maintenance drug regimens (e.g., DAPT, ongoing specialized antibiotics, active continuous infusions).
+ 2. Active medication holds with durations and explicit reasons (e.g., "Hold Metformin 48h — contrast-induced AKI risk").
+ 3. Specific pending procedures, discharge tracking, or targeted monitoring tasks.]
+🕒  24h Updates:
+[Brief clinical timeline milestones that occurred within the last 24 hours. List events or procedures by name only (e.g., "OGD completed"). Do NOT write specific diagnostic measurements or findings here; pass them directly to Investigations or Labs.]
+👁️  Exam:
+[Only explicitly documented bedside clinical findings with objective values or qualitative descriptors. If a system isn't mentioned, omit it entirely.]
+🩻  Investigations:
+[Key findings from structural, diagnostic, or imaging tests (ECG, Echo, CXR, CT, MRI, Ultrasound, Doppler, Endoscopy, Biopsies). You MUST append the date in parentheses at the very end of each individual item bullet. Example:
+ - OGD: Gastric Ulcer 2cm, Forrest Class III, no active bleeding (21/05)
+ - CT Brain: Cerebral atrophy, no acute bleed (20/05)]
+🧪  Labs:
+[Clean consolidated laboratory tracking. Group tests together. If a specific laboratory test was performed multiple times across the timeline, condense it into a single line showing the numerical trend path using arrows, with the final date tacked neatly at the very end in parentheses. Never repeat dates on individual lines or use clock timestamps (HH:MM). Example: 
+ - Troponin T: 1.5 → 0.8 (20/05)
+ - Creatinine: 1.8 → 2.1↑ (20/05)
+ - WBC: 16.5 → 9.2 (22/05)]
+
+═══════════════════════════════
+ABSOLUTE CRITICAL CLINICAL SAFETY RULES:
+
+RULE 1 — CONTEXT ISOLATION: You are processing ONE patient chart at a time. Do not mention or hint at procedures, diagnoses, anatomical sites, or data from other patients previously seen (e.g., do not say "coronary angiography not done" if this patient has a simple gastric ulcer and zero cardiac indices).
+
+RULE 2 — INVESTIGATION AND LAB DATING: Every single entry line under ■ Investigations and ■ Labs must have its corresponding date wrapped cleanly in parentheses at the end of the text string line: (DD/MM).
+
+RULE 3 — NO LAB DATE REPETITION OR ARROW ARTIFACTS: Condense multiple daily values into a single sequential trend line with arrows, ending with the date in parentheses, e.g., "Test: Val1 → Val2 (DD/MM)". CRITICAL: If a lab test only has a single value recorded in the text, output it plainly with its date; NEVER append empty arrows or text like "→ (no new values)".
+
+RULE 4 — CONTINUOUS THERAPY PROTECTION: Active critical maintenance medications (like dual antiplatelet therapy, statins, or targeted IV regimens) must remain highlighted under Management & Active Plans. Never let the model drop standard post-procedure stabilization therapies during single-pass summaries.
+
+
+RULE 5 — STRICTLY NO NAME HEADER: Start your response directly with the "⚠️ Allergies:" text line. Do not output text, metadata, or names before it.
+
+RULE 6 — CLEAN PROBLEM LISTING: Keep the 🔴 Active Problems list focused on high-level diagnoses, major clinical complications, or active syndromes. Do not list every individual symptom (like nausea or mild pain) as its own bullet point, and never lump two distinct clinical conditions onto the same bullet line.`;
+
+            const masterUserPrompt = `Review this complete clinical record file and generate the isolated handover profile according to the layout rules:
+
+${completeTimelineText}`;
+
+            // Single request per patient pipeline execution
+            const patientHandover = await callGroqWithFallback(masterSysPrompt, masterUserPrompt, 2200);
             
-            const olderEntries = allEntries.filter(e => (e.timestamp || 0) < boundary);
-            const recentEntries = allEntries.filter(e => (e.timestamp || 0) >= boundary);
-            
-            let historySummary = "No historical logs older than 24h.";
-            if (olderEntries.length > 0) {
-                const olderText = formatEntriesForLlm(olderEntries, includeTranscripts);
-                const sysPrompt1 = "You are an advanced medical scribe. Analyze clinical entries older than 24 hours. Summarize: active diagnoses, baseline metrics, exam trends, and active ongoing treatment plans. Be precise, structured, and extremely concise.";
-                const userPrompt1 = `Patient: ${p.name}\nHistorical Logs:\n${olderText}`;
-                historySummary = await callGroqWithFallback(sysPrompt1, userPrompt1);
-            }
-            
-            const recentText = formatEntriesForLlm(recentEntries, includeTranscripts);
-            const sysPrompt2 = `You are an expert clinical resident. Synthesize the provided baseline clinical context along with new updates from the last 24 hours to generate a clear, highly organized clinical handover profile. 
-
-Format the output EXACTLY matching this block structure. Do not use conversational preambles or chat metadata, use emojis and symbols to make it easier to read. 
-
-\${p.name}
-\${new Date().toLocaleDateString('en-GB', {day: 'numeric', month: 'numeric'})}
-■ plans:
-[Consolidated next steps, tasks to check on shift, diagnostic plans]
-■ Updates:
-[Log changes in condition, procedures completed, discharge status, active management updates]
-■ Ex:
-[Most recent physical exam baseline parameters]
-■ Investigations:
-[New imaging/procedure results, pending scans]
-■ Labs:
-[Latest labs analysis compiled chronologically with dates]`;
-
-            const userPrompt2 = `Patient: ${p.name}
-Historical Context:
-${historySummary}
-
-Recent 24-Hour Logs:
-${recentText}`;
-
-            const patientHandover = await callGroqWithFallback(sysPrompt2, userPrompt2);
-            finalHandovers.push(patientHandover.trim());
+            // Append the safe identity header at the local client runtime level
+            const safePatientProfile = `### 👤 ${p.name}\n${patientHandover.trim()}`;
+            finalHandovers.push(safePatientProfile);
         }
-        
-        const dateString = new Date().toLocaleDateString('en-GB', {day: 'numeric', month: 'numeric'});
-        const outputHeader = `Neurology ${dateString}\n\n`;
+
         const separator = "\n\n————————————\n\n";
-        summaryText.textContent = outputHeader + finalHandovers.join(separator);
-        
+        summaryText.textContent = finalHandovers.join(separator);
+
         actionBtn.disabled = false;
         actionBtn.innerHTML = "📋 Copy Handover";
         actionBtn.onclick = copyAiSummary;
-        
+
     } catch (err) {
         summaryText.innerHTML = `<span style="color:var(--danger)">❌ Pipeline failed: ${err.message || String(err)}</span>`;
         actionBtn.disabled = false;
         actionBtn.innerHTML = "Retry";
-        actionBtn.onclick = startAiSummaryPipeline;
+        actionBtn.onclick = () => startAiSummaryPipeline(patientIds);
         configDiv.classList.remove('hidden');
     }
 }
+
+
 
 function copyAiSummary() {
     const el = document.getElementById('aiSummaryText');
@@ -2281,20 +2363,22 @@ function copyAiSummary() {
     }
 }
 
-async function callGroqWithFallback(systemPrompt, userPrompt) {
+
+async function callGroqWithFallback(systemPrompt, userPrompt, maxTokens = 1500) {
     const key = getGroqKey();
     if (!key) {
         alert('No Groq API key set. Tap 🔑 in the menu to add your key.');
         throw new Error('No API Key');
     }
-    
-    // Ordered endpoints: Primary Llama 4 Scout, Fallbacks
+
+    // llama-3.3-70b first for complex structured tasks (better instruction following),
+    // llama-4-scout as fast fallback, then gpt-oss-120b
     const models = [
+        'llama-3.3-70b-versatile',
         'meta-llama/llama-4-scout-17b-16e-instruct',
-        'openai/gpt-oss-120b',
-        'llama-3.3-70b-versatile'
+        'openai/gpt-oss-120b'
     ];
-    
+
     for (let model of models) {
         try {
             const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -2304,24 +2388,26 @@ async function callGroqWithFallback(systemPrompt, userPrompt) {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: model,
+                    model,
                     messages: [
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: userPrompt }
                     ],
                     temperature: 0.1,
-                    max_tokens: 1500
+                    max_tokens: maxTokens
                 })
             });
             if (res.ok) {
                 const data = await res.json();
                 return data.choices?.[0]?.message?.content || '';
             }
+            const errData = await res.json().catch(() => ({}));
+            console.warn(`Model ${model} returned ${res.status}:`, errData?.error?.message || '');
         } catch (e) {
-            console.warn(`Model ${model} execution failed, shifting to next...`, e);
+            console.warn(`Model ${model} failed:`, e);
         }
     }
-    throw new Error("All Groq models failed. Please check network or API limits.");
+    throw new Error("All Groq models failed. Please check your API key and network.");
 }
 
 </script>
