@@ -2138,8 +2138,19 @@ function renderUploadHistory(containerId) {
             </div>
             <button id="${prefix}-histBtn-${i}" onclick="copyHistoryLink(${i}, '${prefix}')" title="Copy link"
                 style="background:var(--teal-light);color:#fff;border:none;border-radius:20px;font-weight:700;font-size:0.75rem;padding:6px 14px;cursor:pointer;flex-shrink:0;transition:.15s;font-family:inherit;display:flex;align-items:center;justify-content:center;">Copy</button>
+            <button onclick="deleteHistoryLink(${i}, '${prefix}')" title="Remove"
+                style="background:transparent;color:var(--muted);border:none;border-radius:50%;width:26px;height:26px;font-size:1rem;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:.15s;line-height:1;"
+                onmouseover="this.style.background='#fee2e2';this.style.color='var(--danger)'" onmouseout="this.style.background='transparent';this.style.color='var(--muted)'">✕</button>
         </div>`;
     }).join('');
+}
+
+function deleteHistoryLink(index, prefix) {
+    let hist = [];
+    try { hist = JSON.parse(localStorage.getItem('medflow_upload_history') || '[]'); } catch(e) {}
+    hist.splice(index, 1);
+    localStorage.setItem('medflow_upload_history', JSON.stringify(hist));
+    renderUploadHistory(prefix);
 }
 
 function copyHistoryLink(index, prefix) {
